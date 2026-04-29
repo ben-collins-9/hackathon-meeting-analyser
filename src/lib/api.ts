@@ -3,7 +3,6 @@ import type { Conversation, Message, MeetingProposal } from './database.types';
 import type { CalendarEvent } from './calendar';
 import { analyzeConversation as analyzeLocally } from './analyzer';
 
-// Convert a scheduled MeetingProposal into a CalendarEvent for the calendar view.
 export function proposalToCalendarEvent(p: MeetingProposal): CalendarEvent {
   const start = new Date(p.scheduled_at!);
   const end = new Date(start.getTime() + p.suggested_duration_mins * 60_000);

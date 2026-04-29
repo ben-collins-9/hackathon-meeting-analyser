@@ -447,3 +447,79 @@ export function getTodayUpcoming(events: CalendarEvent[]): CalendarEvent[] {
     })
     .sort((a, b) => new Date(a.startAt).getTime() - new Date(b.startAt).getTime());
 }
+
+// ---------------------------------------------------------------------------
+// Free-slot finder — finds gaps in the calendar for scheduling a new meeting
+// ---------------------------------------------------------------------------
+
+export interface FreeSlot {
+  start: Date;
+  end: Date;
+  label: string;
+}
+
+const WORK_START_HOUR = 9;
+const WORK_END_HOUR   = 18;
+
+export function findFreeSlots(
+  durationMins: number,
+  allEvents: CalendarEvent[],
+  maxSlots = 5,
+  daysAhead = 7,
+): FreeSlot[] {
+  const slots: FreeSlot[] = [];
+  const now = new Date();
+
+  // Round search start up to next 30-min boundary
+  const snapStart = new Date(now);
+  const snapMins0 = Math.ceil(snapStart.getMinutes() / 30) * 30;
+  snapStart.setMinutes(snapMins0 >= 60 ? 0 : snapMins0, 0, 0);
+  if (snapMins0 >= 60) snapStart.setHours(snapStart.getHours() + 1);
+
+  for (let day = 0; day <= daysAhead && slots.length < maxSlots; day++) {
+    const date = addDays(snapStart, day);
+    const dow = date.getDay();
+    if (dow === 0 || dow === 6) continue; // skip weekends
+
+    const dayStart = new Date(date);
+    dayStart.setHours(WORK_START_HOUR, 0, 0, 0);
+    const dayEnd = new Date(date);
+    dayEnd.setHours(WORK_END_HOUR, 0, 0, 0);
+
+    // Non-focus events block time
+    const busy = allEvents
+      .filter((e) => isSameDay(new Date(e.startAt), date) && e.category !== 'focus')
+      .map((e) => ({ s: new Date(e.startAt).getTime(), e: new Date(e.endAt).getTime() }))
+      .sort((a, b) => a.s - b.s);
+
+    // Start no earlier than work-day start; on day 0 start from snap
+    let cursor = new Date(day === 0 && snapStart > dayStart ? snapStart : dayStart);
+    const snapM = Math.ceil(cursor.getMinutes() / 30) * 30;
+    cursor.setMinutes(snapM >= 60 ? 0 : snapM, 0, 0);
+    if (snapM >= 60) cursor.setHours(cursor.getHours() + 1);
+
+    while (cursor.getTime() + durationMins * 60_000 <= dayEnd.getTime() && slots.length < maxSlots) {
+      const slotEnd = cursor.getTime() + durationMins * 60_000;
+      const blocker = busy.find((b) => b.s < slotEnd && b.e > cursor.getTime());
+      if (!blocker) {
+        const start = new Date(cursor);
+        slots.push({
+          start,
+          end: new Date(slotEnd),
+          label:
+            start.toLocaleDateString(undefined, { weekday: 'short', month: 'short', day: 'numeric' }) +
+            ', ' +
+            start.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+        });
+        cursor = new Date(slotEnd);
+      } else {
+        // Jump to end of the blocking event, snapped to 30-min grid
+        cursor = new Date(blocker.e);
+        const bm = Math.ceil(cursor.getMinutes() / 30) * 30;
+        cursor.setMinutes(bm >= 60 ? 0 : bm, 0, 0);
+        if (bm >= 60) cursor.setHours(cursor.getHours() + 1);
+      }
+    }
+  }
+  return slots;
+}

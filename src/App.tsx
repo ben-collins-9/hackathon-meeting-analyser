@@ -1,5 +1,5 @@
 import { useEffect, useState, useCallback } from 'react';
-import { Plus, Zap, BellRing, CalendarDays } from 'lucide-react';
+import { Plus, Zap, BellRing, CalendarDays, BarChart2 } from 'lucide-react';
 import type { Conversation, Message, MeetingProposal } from './lib/database.types';
 import { getConversations, getMessages, getMeetingProposals, updateProposalStatus } from './lib/api';
 import ConversationPanel from './components/ConversationPanel';
@@ -7,8 +7,9 @@ import NewConversationModal from './components/NewConversationModal';
 import MeetingProposalCard from './components/MeetingProposalCard';
 import StatsBar from './components/StatsBar';
 import CalendarPage from './components/calendar/CalendarPage';
+import AnalyticsDashboard from './components/analytics/AnalyticsDashboard';
 
-type Tab = 'conversations' | 'proposals' | 'calendar';
+type Tab = 'conversations' | 'proposals' | 'calendar' | 'analytics';
 
 export default function App() {
   const [tab, setTab] = useState<Tab>('conversations');
@@ -78,6 +79,7 @@ export default function App() {
     { id: 'conversations', label: 'Conversations', icon: <Zap size={14} /> },
     { id: 'proposals', label: 'Meeting Proposals', icon: <BellRing size={14} /> },
     { id: 'calendar', label: 'Calendar', icon: <CalendarDays size={14} /> },
+    { id: 'analytics', label: 'Analytics', icon: <BarChart2 size={14} /> },
   ];
 
   return (
@@ -94,7 +96,7 @@ export default function App() {
               <span className="ml-2 text-xs text-gray-400 hidden sm:inline">async-first communication analyzer</span>
             </div>
           </div>
-          {tab !== 'calendar' && (
+          {tab !== 'calendar' && tab !== 'analytics' && (
             <button
               onClick={() => setShowModal(true)}
               className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-gray-900 text-white text-xs rounded-lg hover:bg-gray-700 transition-colors"
@@ -106,13 +108,13 @@ export default function App() {
       </header>
 
       <div className={`max-w-6xl mx-auto px-4 sm:px-6 ${tab === 'calendar' ? 'flex-1 flex flex-col min-h-0 pb-4' : 'py-6 space-y-6'}`}>
-        {/* Stats — only on non-calendar tabs */}
-        {!loading && tab !== 'calendar' && (
+        {/* Stats — only on non-calendar/analytics tabs */}
+        {!loading && tab !== 'calendar' && tab !== 'analytics' && (
           <StatsBar conversations={conversations} proposals={proposals} />
         )}
 
         {/* High urgency alert */}
-        {highUrgencyPending > 0 && tab !== 'calendar' && (
+        {highUrgencyPending > 0 && tab !== 'calendar' && tab !== 'analytics' && (
           <div className="flex items-start gap-3 bg-red-50 border border-red-200 rounded-xl px-4 py-3">
             <BellRing size={16} className="text-red-500 shrink-0 mt-0.5" />
             <div>
@@ -159,7 +161,7 @@ export default function App() {
         </div>
 
         {/* Content */}
-        {loading && tab !== 'calendar' ? (
+        {loading && tab !== 'calendar' && tab !== 'analytics' ? (
           <div className="flex items-center justify-center py-20">
             <div className="w-6 h-6 border-2 border-gray-300 border-t-gray-700 rounded-full animate-spin" />
           </div>
@@ -167,6 +169,8 @@ export default function App() {
           <div className="flex-1 min-h-0 pt-4" style={{ height: 'calc(100vh - 160px)' }}>
             <CalendarPage refreshKey={calendarRefreshKey} />
           </div>
+        ) : tab === 'analytics' ? (
+          <AnalyticsDashboard conversations={conversations} proposals={proposals} />
         ) : tab === 'conversations' ? (
           <ConversationPanel
             conversations={conversations}
