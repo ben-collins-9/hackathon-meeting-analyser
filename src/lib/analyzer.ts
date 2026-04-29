@@ -285,7 +285,7 @@ export function analyzeConversation(
     const signalDesc = signalLabels.length > 1
       ? `${signalLabels.slice(0, -1).join(', ')} and ${signalLabels[signalLabels.length - 1]}`
       : signalLabels[0] ?? 'unresolved tension';
-    summary = `This ${messages.length}-message thread on ${platform} shows ${signalDesc} across ${participants.length} participant${participants.length !== 1 ? 's' : ''}. A ${suggested_duration_mins}-minute sync would help resolve this efficiently.`;
+    summary = `This ${messages.length}-message thread shows ${signalDesc} across ${participants.length} participant${participants.length !== 1 ? 's' : ''}. A ${suggested_duration_mins}-minute sync would help resolve this efficiently.`;
   } else if (asyncOkSignals.length > 0) {
     summary = `Conversation is progressing well async — ${asyncHit!.count} positive signal${asyncHit!.count !== 1 ? 's' : ''} detected (${asyncHit!.matches.slice(0, 3).join(', ')}). No meeting needed.`;
   } else {

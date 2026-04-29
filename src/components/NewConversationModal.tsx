@@ -4,8 +4,6 @@ import { createConversation } from '../lib/api';
 import type { Conversation } from '../lib/database.types';
 import { useAuth } from '../lib/auth';
 
-const PLATFORMS = ['slack', 'email', 'github', 'jira', 'discord', 'teams'];
-
 interface Props {
   onClose: () => void;
   onCreated: (conv: Conversation) => void;
@@ -14,7 +12,6 @@ interface Props {
 export default function NewConversationModal({ onClose, onCreated }: Props) {
   const { user, profile } = useAuth();
   const [title, setTitle] = useState('');
-  const [platform, setPlatform] = useState('slack');
   const [participants, setParticipants] = useState([profile?.display_name || '', '']);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
@@ -39,7 +36,7 @@ export default function NewConversationModal({ onClose, onCreated }: Props) {
     setLoading(true);
     setError('');
     try {
-      const conv = await createConversation(title.trim(), platform, filtered, user?.id);
+      const conv = await createConversation(title.trim(), 'general', filtered, user?.id);
       onCreated(conv);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to create');
@@ -65,28 +62,9 @@ export default function NewConversationModal({ onClose, onCreated }: Props) {
               value={title}
               onChange={(e) => setTitle(e.target.value)}
               placeholder="e.g. Q3 roadmap planning thread"
+              autoFocus
               className="w-full text-sm border border-gray-200 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-gray-300"
             />
-          </div>
-
-          <div>
-            <label className="block text-xs font-medium text-gray-700 mb-1">Platform</label>
-            <div className="flex flex-wrap gap-2">
-              {PLATFORMS.map((p) => (
-                <button
-                  key={p}
-                  type="button"
-                  onClick={() => setPlatform(p)}
-                  className={`px-3 py-1 rounded-full text-xs font-medium border transition-all ${
-                    platform === p
-                      ? 'bg-gray-900 text-white border-gray-900'
-                      : 'bg-white text-gray-600 border-gray-200 hover:border-gray-400'
-                  }`}
-                >
-                  {p}
-                </button>
-              ))}
-            </div>
           </div>
 
           <div>

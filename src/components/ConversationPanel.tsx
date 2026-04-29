@@ -7,14 +7,6 @@ import { useAuth } from '../lib/auth';
 
 const ANALYSIS_DEBOUNCE_MS = 1200;
 
-const PLATFORM_COLORS: Record<string, string> = {
-  slack: 'bg-emerald-100 text-emerald-700',
-  email: 'bg-sky-100 text-sky-700',
-  github: 'bg-gray-100 text-gray-700',
-  jira: 'bg-blue-100 text-blue-700',
-  discord: 'bg-violet-100 text-violet-700',
-  teams: 'bg-teal-100 text-teal-700',
-};
 
 const SIGNAL_CATEGORY_COLORS: Record<string, string> = {
   blocker: 'bg-red-100 text-red-700 border-red-200',
@@ -200,7 +192,7 @@ export default function ConversationPanel({
         const aState = analysisState[conv.id] ?? { status: 'idle' };
         const result = aState.result;
         const analysis = result?.analysis;
-        const platformColor = PLATFORM_COLORS[conv.platform] ?? 'bg-gray-100 text-gray-700';
+
         const participants = conv.participants as string[];
 
         return (
@@ -213,9 +205,6 @@ export default function ConversationPanel({
               <div className="flex-1 min-w-0">
                 <div className="flex items-center gap-2 flex-wrap">
                   <span className="font-medium text-gray-900 text-sm truncate">{conv.title}</span>
-                  <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${platformColor}`}>
-                    {conv.platform}
-                  </span>
                   {msgs.length > 0 && (
                     <span className="text-xs text-gray-400">{msgs.length} message{msgs.length !== 1 ? 's' : ''}</span>
                   )}
