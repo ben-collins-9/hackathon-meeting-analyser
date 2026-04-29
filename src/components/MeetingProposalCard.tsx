@@ -1,7 +1,9 @@
-import { useState } from 'react';
-import { Clock, Users, CheckCircle, XCircle, Calendar, ChevronDown, ChevronUp, AlertTriangle, Minus, ArrowUp, Activity, Tag } from 'lucide-react';
+import { useState, useEffect } from 'react';
+import { Clock, Users, CheckCircle, XCircle, Calendar, ChevronDown, ChevronUp, AlertTriangle, Minus, ArrowUp, Activity, Tag, Sparkles, Loader2 } from 'lucide-react';
 import type { MeetingProposal, SignalHit } from '../lib/database.types';
-import { updateProposalStatus } from '../lib/api';
+import { updateProposalStatus, getScheduledProposalEvents } from '../lib/api';
+import type { FreeSlot } from '../lib/calendar';
+import { findFreeSlots, localProvider } from '../lib/calendar';
 
 const URGENCY_CONFIG = {
   high: { label: 'High urgency', color: 'text-red-600 bg-red-50 border-red-200', icon: ArrowUp },
@@ -42,6 +44,45 @@ export default function MeetingProposalCard({ proposal, onUpdated }: Props) {
   const [scheduleTime, setScheduleTime] = useState('');
   const [showScheduler, setShowScheduler] = useState(false);
   const [loading, setLoading] = useState(false);
+  const [suggestedSlots, setSuggestedSlots] = useState<FreeSlot[]>([]);
+  const [loadingSlots, setLoadingSlots] = useState(false);
+
+  // Load suggested free slots whenever the scheduler panel opens
+  useEffect(() => {
+    if (!showScheduler) return;
+    let cancelled = false;
+    setLoadingSlots(true);
+    async function load() {
+      try {
+        const from = new Date();
+        from.setMonth(from.getMonth() - 1);
+        const to = new Date();
+        to.setMonth(to.getMonth() + 2);
+        const [mockEvts, scheduledEvts] = await Promise.all([
+          localProvider.listEvents(from, to),
+          getScheduledProposalEvents(),
+        ]);
+        if (cancelled) return;
+        const allEvents = [...mockEvts, ...scheduledEvts];
+        setSuggestedSlots(findFreeSlots(proposal.suggested_duration_mins, allEvents));
+      } finally {
+        if (!cancelled) setLoadingSlots(false);
+      }
+    }
+    load();
+    return () => { cancelled = true; };
+  }, [showScheduler, proposal.suggested_duration_mins]);
+
+  function applySlot(slot: FreeSlot) {
+    const d = slot.start;
+    const yyyy = d.getFullYear();
+    const mm = String(d.getMonth() + 1).padStart(2, '0');
+    const dd = String(d.getDate()).padStart(2, '0');
+    const hh = String(d.getHours()).padStart(2, '0');
+    const min = String(d.getMinutes()).padStart(2, '0');
+    setScheduleDate(`${yyyy}-${mm}-${dd}`);
+    setScheduleTime(`${hh}:${min}`);
+  }
 
   const urgency = URGENCY_CONFIG[proposal.urgency];
   const UrgencyIcon = urgency.icon;
@@ -227,26 +268,71 @@ export default function MeetingProposalCard({ proposal, onUpdated }: Props) {
           )}
 
           {showScheduler && (
-            <div className="bg-white border border-gray-200 rounded-lg p-3 space-y-2">
-              <p className="text-xs font-semibold text-gray-700">Schedule meeting</p>
-              <div className="flex gap-2">
-                <input
-                  type="date"
-                  value={scheduleDate}
-                  onChange={(e) => setScheduleDate(e.target.value)}
-                  className="flex-1 text-xs border border-gray-200 rounded-lg px-2 py-1.5 focus:outline-none focus:ring-2 focus:ring-gray-300"
-                />
-                <input
-                  type="time"
-                  value={scheduleTime}
-                  onChange={(e) => setScheduleTime(e.target.value)}
-                  className="flex-1 text-xs border border-gray-200 rounded-lg px-2 py-1.5 focus:outline-none focus:ring-2 focus:ring-gray-300"
-                />
+            <div className="bg-white border border-blue-100 rounded-xl p-4 space-y-4">
+              <div className="flex items-center gap-1.5">
+                <Sparkles size={13} className="text-blue-500" />
+                <p className="text-xs font-semibold text-gray-800">Schedule meeting</p>
+                <span className="ml-auto text-xs text-gray-400">{proposal.suggested_duration_mins} min</span>
               </div>
+
+              {/* Suggested slots */}
+              <div>
+                <p className="text-xs text-gray-500 mb-2">Suggested free slots</p>
+                {loadingSlots ? (
+                  <div className="flex items-center gap-2 text-xs text-gray-400 py-1">
+                    <Loader2 size={12} className="animate-spin" /> Finding available times…
+                  </div>
+                ) : suggestedSlots.length === 0 ? (
+                  <p className="text-xs text-gray-400 italic">No free slots found in the next 7 days — pick manually below.</p>
+                ) : (
+                  <div className="flex flex-wrap gap-1.5">
+                    {suggestedSlots.map((slot, i) => {
+                      const isSelected =
+                        scheduleDate ===
+                          `${slot.start.getFullYear()}-${String(slot.start.getMonth() + 1).padStart(2, '0')}-${String(slot.start.getDate()).padStart(2, '0')}` &&
+                        scheduleTime ===
+                          `${String(slot.start.getHours()).padStart(2, '0')}:${String(slot.start.getMinutes()).padStart(2, '0')}`;
+                      return (
+                        <button
+                          key={i}
+                          onClick={() => applySlot(slot)}
+                          className={`text-xs px-2.5 py-1 rounded-lg border font-medium transition-all ${
+                            isSelected
+                              ? 'bg-blue-600 text-white border-blue-600 shadow-sm'
+                              : 'bg-white text-gray-700 border-gray-200 hover:border-blue-300 hover:bg-blue-50'
+                          }`}
+                        >
+                          {slot.label}
+                        </button>
+                      );
+                    })}
+                  </div>
+                )}
+              </div>
+
+              {/* Manual override */}
+              <div>
+                <p className="text-xs text-gray-500 mb-2">Or pick a custom time</p>
+                <div className="flex gap-2">
+                  <input
+                    type="date"
+                    value={scheduleDate}
+                    onChange={(e) => setScheduleDate(e.target.value)}
+                    className="flex-1 text-xs border border-gray-200 rounded-lg px-2 py-1.5 focus:outline-none focus:ring-2 focus:ring-blue-200"
+                  />
+                  <input
+                    type="time"
+                    value={scheduleTime}
+                    onChange={(e) => setScheduleTime(e.target.value)}
+                    className="flex-1 text-xs border border-gray-200 rounded-lg px-2 py-1.5 focus:outline-none focus:ring-2 focus:ring-blue-200"
+                  />
+                </div>
+              </div>
+
               <button
                 onClick={handleSchedule}
                 disabled={!scheduleDate || !scheduleTime || loading}
-                className="w-full py-1.5 text-xs bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-40 transition-colors"
+                className="w-full py-2 text-xs bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-40 transition-colors font-medium"
               >
                 {loading ? 'Saving…' : 'Confirm schedule'}
               </button>

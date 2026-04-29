@@ -1,7 +1,8 @@
-import { useState, useEffect } from 'react';
-import { ChevronLeft, ChevronRight, CalendarDays } from 'lucide-react';
+import { useState, useEffect, useCallback } from 'react';
+import { ChevronLeft, ChevronRight } from 'lucide-react';
 import type { CalendarEvent } from '../../lib/calendar';
 import { localProvider, startOfWeek, addDays, isSameDay } from '../../lib/calendar';
+import { getScheduledProposalEvents } from '../../lib/api';
 import MonthView from './MonthView';
 import WeekView from './WeekView';
 import DayView from './DayView';
@@ -38,25 +39,52 @@ function navigate(date: Date, mode: ViewMode, dir: -1 | 1): Date {
   return d;
 }
 
-export default function CalendarPage() {
+interface Props {
+  refreshKey?: number;
+}
+
+export default function CalendarPage({ refreshKey = 0 }: Props) {
   const [viewMode, setViewMode] = useState<ViewMode>('week');
   const [currentDate, setCurrentDate] = useState(new Date());
   const [events, setEvents] = useState<CalendarEvent[]>([]);
   const [selectedEvent, setSelectedEvent] = useState<CalendarEvent | null>(null);
   const [loading, setLoading] = useState(true);
 
-  useEffect(() => {
-    async function load() {
-      const from = new Date();
-      from.setMonth(from.getMonth() - 2);
-      const to = new Date();
-      to.setMonth(to.getMonth() + 3);
-      const evts = await localProvider.listEvents(from, to);
-      setEvents(evts);
-      setLoading(false);
-    }
-    load();
+  const loadEvents = useCallback(async () => {
+    const from = new Date();
+    from.setMonth(from.getMonth() - 2);
+    const to = new Date();
+    to.setMonth(to.getMonth() + 3);
+
+    const [mockEvts, scheduledEvts] = await Promise.all([
+      localProvider.listEvents(from, to),
+      getScheduledProposalEvents(),
+    ]);
+
+    // Merge: scheduled proposals override mock events with same id (none expected),
+    // and are distinguished by their 'proposal-' id prefix.
+    const proposalIds = new Set(scheduledEvts.map((e) => e.id));
+    const merged = [
+      ...mockEvts.filter((e) => !proposalIds.has(e.id)),
+      ...scheduledEvts,
+    ];
+    setEvents(merged);
+    setLoading(false);
   }, []);
+
+  useEffect(() => {
+    loadEvents();
+  }, [loadEvents, refreshKey]);
+
+  // Refresh scheduled meetings whenever the browser tab regains focus
+  // (user may have just scheduled something on another tab/view).
+  useEffect(() => {
+    function onVisibility() {
+      if (document.visibilityState === 'visible') loadEvents();
+    }
+    document.addEventListener('visibilitychange', onVisibility);
+    return () => document.removeEventListener('visibilitychange', onVisibility);
+  }, [loadEvents]);
 
   const today = new Date();
   const isToday = isSameDay(currentDate, today);

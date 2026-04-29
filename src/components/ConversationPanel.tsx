@@ -56,9 +56,12 @@ export default function ConversationPanel({
   const [expanded, setExpanded] = useState<string | null>(null);
   const [composing, setComposing] = useState<Record<string, { author: string; content: string }>>({});
   const [analysisState, setAnalysisState] = useState<Record<string, AnalysisState>>({});
+  const [sending, setSending] = useState<string | null>(null);
 
   // Debounce timers per conversation
   const debounceRefs = useRef<Record<string, ReturnType<typeof setTimeout>>>({});
+  // Scroll anchors for each conversation's message list
+  const messageEndRefs = useRef<Record<string, HTMLDivElement | null>>({});
 
   function setAnalysis(convId: string, update: Partial<AnalysisState>) {
     setAnalysisState((prev) => ({ ...prev, [convId]: { ...(prev[convId] ?? { status: 'idle' }), ...update } }));
@@ -84,8 +87,12 @@ export default function ConversationPanel({
       });
       let proposalSaved = false;
 
-      if (result.needs_meeting && analysis) {
-        // Always auto-save/update the proposal — no user prompt needed
+      if (result.source === 'edge' && result.proposal) {
+        // Edge function already persisted/upserted the proposal server-side
+        proposalSaved = true;
+        onAnalysisComplete();
+      } else if (result.needs_meeting && analysis) {
+        // Local fallback: persist via client (edge function unavailable)
         try {
           await upsertPendingProposal(conv.id, analysis);
           pendo.track('proposal_saved', {
@@ -100,12 +107,8 @@ export default function ConversationPanel({
           proposalSaved = true;
           onAnalysisComplete();
         } catch {
-          // Silent — proposal will still show in UI even if persist fails
+          // Silent — UI still reflects the analysis result
         }
-      } else if (result.source === 'edge' && result.proposal) {
-        // Edge function already persisted the proposal
-        proposalSaved = true;
-        onAnalysisComplete();
       }
 
       setAnalysis(conv.id, {
@@ -152,18 +155,25 @@ export default function ConversationPanel({
   async function handleSend(conv: Conversation) {
     const c = composing[conv.id];
     if (!c?.author?.trim() || !c?.content?.trim()) return;
-    const msg = await addMessage(conv.id, c.author.trim(), c.content.trim());
-    pendo.track('message_added', {
-      conversation_id: conv.id,
-      content_length: c.content.trim().length,
-      message_index: (messages[conv.id]?.length ?? 0),
-    });
-    onMessageAdded(conv.id, msg);
-    setComposing((prev) => ({ ...prev, [conv.id]: { author: c.author, content: '' } }));
+    setSending(conv.id);
+    try {
+      const msg = await addMessage(conv.id, c.author.trim(), c.content.trim());
+      pendo.track('message_added', {
+        conversation_id: conv.id,
+        content_length: c.content.trim().length,
+        message_index: (messages[conv.id]?.length ?? 0),
+      });
+      onMessageAdded(conv.id, msg);
+      setComposing((prev) => ({ ...prev, [conv.id]: { author: c.author, content: '' } }));
 
-    // Auto-analyse after every message
-    const updatedMsgs = [...(messages[conv.id] ?? []), msg];
-    scheduleAnalysis(conv, updatedMsgs);
+      // Build the full updated list with the new message appended
+      const updatedMsgs = [...(messages[conv.id] ?? []), msg];
+      // Scroll to bottom immediately
+      setTimeout(() => { messageEndRefs.current[conv.id]?.scrollIntoView({ behavior: 'smooth' }); }, 30);
+      scheduleAnalysis(conv, updatedMsgs);
+    } finally {
+      setSending(null);
+    }
   }
 
   async function handleDelete(id: string) {
@@ -173,6 +183,13 @@ export default function ConversationPanel({
     });
     onConversationDeleted(id);
   }
+
+  // Auto-scroll message list to bottom when new messages arrive for the expanded conversation
+  useEffect(() => {
+    if (expanded) {
+      messageEndRefs.current[expanded]?.scrollIntoView({ behavior: 'smooth' });
+    }
+  }, [messages, expanded]);
 
   // Clean up debounce timers on unmount
   useEffect(() => {
@@ -301,22 +318,25 @@ export default function ConversationPanel({
                   {msgs.length === 0 ? (
                     <p className="text-xs text-gray-400 text-center py-4">No messages yet. Add some below.</p>
                   ) : (
-                    msgs.map((m) => (
-                      <div key={m.id} className="flex gap-2">
-                        <div className="w-6 h-6 rounded-full bg-gray-200 flex items-center justify-center text-xs font-bold text-gray-600 shrink-0 mt-0.5">
-                          {m.author.charAt(0).toUpperCase()}
-                        </div>
-                        <div className="flex-1 min-w-0">
-                          <div className="flex items-baseline gap-2">
-                            <span className="text-xs font-semibold text-gray-700">{m.author}</span>
-                            <span className="text-xs text-gray-400">
-                              {new Date(m.sent_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
-                            </span>
+                    <>
+                      {msgs.map((m) => (
+                        <div key={m.id} className="flex gap-2">
+                          <div className="w-6 h-6 rounded-full bg-gray-200 flex items-center justify-center text-xs font-bold text-gray-600 shrink-0 mt-0.5">
+                            {m.author.charAt(0).toUpperCase()}
                           </div>
-                          <p className="text-sm text-gray-800 mt-0.5 whitespace-pre-wrap">{m.content}</p>
+                          <div className="flex-1 min-w-0">
+                            <div className="flex items-baseline gap-2">
+                              <span className="text-xs font-semibold text-gray-700">{m.author}</span>
+                              <span className="text-xs text-gray-400">
+                                {new Date(m.sent_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                              </span>
+                            </div>
+                            <p className="text-sm text-gray-800 mt-0.5 whitespace-pre-wrap">{m.content}</p>
+                          </div>
                         </div>
-                      </div>
-                    ))
+                      ))}
+                      <div ref={(el) => { messageEndRefs.current[conv.id] = el; }} />
+                    </>
                   )}
                 </div>
 
@@ -340,9 +360,12 @@ export default function ConversationPanel({
                     />
                     <button
                       onClick={() => handleSend(conv)}
-                      className="p-1.5 bg-gray-900 text-white rounded-lg hover:bg-gray-700 transition-colors"
+                      disabled={sending === conv.id}
+                      className="p-1.5 bg-gray-900 text-white rounded-lg hover:bg-gray-700 disabled:opacity-50 transition-colors"
                     >
-                      <Send size={14} />
+                      {sending === conv.id
+                        ? <Loader2 size={14} className="animate-spin" />
+                        : <Send size={14} />}
                     </button>
                   </div>
 

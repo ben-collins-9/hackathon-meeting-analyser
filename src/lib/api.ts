@@ -1,6 +1,34 @@
 import { supabase } from './supabase';
 import type { Conversation, Message, MeetingProposal } from './database.types';
+import type { CalendarEvent } from './calendar';
 import { analyzeConversation as analyzeLocally } from './analyzer';
+
+export function proposalToCalendarEvent(p: MeetingProposal): CalendarEvent {
+  const start = new Date(p.scheduled_at!);
+  const end = new Date(start.getTime() + p.suggested_duration_mins * 60_000);
+  const participants = p.participants as string[];
+  return {
+    id: `proposal-${p.id}`,
+    title: p.title,
+    description: p.summary,
+    startAt: start.toISOString(),
+    endAt: end.toISOString(),
+    attendees: participants.map((name) => ({ name, email: '', status: 'accepted' as const })),
+    agendaItems: p.agenda_items as string[],
+    category: 'meeting',
+    source: 'local',
+  };
+}
+
+export async function getScheduledProposalEvents(): Promise<CalendarEvent[]> {
+  const { data, error } = await supabase
+    .from('meeting_proposals')
+    .select('*')
+    .eq('status', 'scheduled')
+    .not('scheduled_at', 'is', null);
+  if (error) throw error;
+  return (data ?? []).map(proposalToCalendarEvent);
+}
 
 export async function getConversations(): Promise<Conversation[]> {
   const { data, error } = await supabase
@@ -137,19 +165,30 @@ export async function saveLocalProposal(conversationId: string, analysis: Return
   return data;
 }
 
-// Upsert the pending proposal for a conversation — creates or updates the existing
-// pending one so repeated auto-analyses don't accumulate duplicate proposals.
+// Upsert the proposal for a conversation — at most one proposal per conversation.
+// If an existing proposal is already scheduled, it is left untouched.
 export async function upsertPendingProposal(
   conversationId: string,
   analysis: ReturnType<typeof analyzeLocally>
 ): Promise<MeetingProposal> {
-  // Check for an existing pending proposal for this conversation
+  // Find any existing proposal for this conversation (regardless of status)
   const { data: existing } = await supabase
     .from('meeting_proposals')
-    .select('id')
+    .select('id, status')
     .eq('conversation_id', conversationId)
-    .eq('status', 'pending')
+    .order('created_at', { ascending: false })
+    .limit(1)
     .maybeSingle();
+
+  // Never overwrite a scheduled meeting with fresh analysis
+  if (existing && existing.status === 'scheduled') {
+    const { data } = await supabase
+      .from('meeting_proposals')
+      .select('*')
+      .eq('id', existing.id)
+      .single();
+    return data!;
+  }
 
   const payload = {
     conversation_id: conversationId,
