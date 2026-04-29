@@ -1,5 +1,6 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { Plus, Send, Trash2, ChevronDown, ChevronUp, Users, Tag, CheckCircle2, Loader2 } from 'lucide-react';
+// Plus is used by the empty-state button below
 import type { Conversation, Message } from '../lib/database.types';
 import type { AnalysisResult } from '../lib/analyzer';
 import { addMessage, analyzeConversation, deleteConversation, upsertPendingProposal } from '../lib/api';
@@ -125,19 +126,18 @@ export default function ConversationPanel({
     });
   }
 
-  function setCompose(id: string, field: 'author' | 'content', value: string) {
-    setComposing((prev) => ({ ...prev, [id]: { ...prev[id], [field]: value } }));
+  function setCompose(id: string, value: string) {
+    setComposing((prev) => ({ ...prev, [id]: { ...prev[id], content: value } }));
   }
 
   async function handleSend(conv: Conversation) {
-    const c = composing[conv.id];
-    const author = currentUserName || c?.author?.trim();
-    if (!author || !c?.content?.trim()) return;
+    const content = composing[conv.id]?.content?.trim();
+    if (!currentUserName || !content) return;
     setSending(conv.id);
     try {
-      const msg = await addMessage(conv.id, author, c.content.trim());
+      const msg = await addMessage(conv.id, currentUserName, content);
       onMessageAdded(conv.id, msg);
-      setComposing((prev) => ({ ...prev, [conv.id]: { author: c.author, content: '' } }));
+      setComposing((prev) => ({ ...prev, [conv.id]: { ...prev[conv.id], content: '' } }));
 
       // Build the full updated list with the new message appended
       const updatedMsgs = [...(messages[conv.id] ?? []), msg];
@@ -310,33 +310,23 @@ export default function ConversationPanel({
                 {/* Compose + delete */}
                 <div className="px-4 py-3 border-t border-gray-100 space-y-2">
                   <div className="flex gap-2">
-                    {currentUserName ? (
-                      <div className="flex items-center gap-1.5 px-2.5 py-1.5 bg-gray-100 rounded-lg shrink-0">
-                        <div className="w-5 h-5 rounded-full bg-gray-700 text-white flex items-center justify-center text-[10px] font-bold">
-                          {currentUserName.charAt(0).toUpperCase()}
-                        </div>
-                        <span className="text-xs font-medium text-gray-700 max-w-[80px] truncate">{currentUserName}</span>
+                    <div className="flex items-center gap-1.5 px-2.5 py-1.5 bg-gray-100 rounded-lg shrink-0 select-none">
+                      <div className="w-5 h-5 rounded-full bg-gray-700 text-white flex items-center justify-center text-[10px] font-bold">
+                        {currentUserName.charAt(0).toUpperCase()}
                       </div>
-                    ) : (
-                      <input
-                        type="text"
-                        placeholder="Your name"
-                        value={composing[conv.id]?.author ?? ''}
-                        onChange={(e) => setCompose(conv.id, 'author', e.target.value)}
-                        className="w-28 text-sm border border-gray-200 rounded-lg px-2 py-1.5 focus:outline-none focus:ring-2 focus:ring-gray-300"
-                      />
-                    )}
+                      <span className="text-xs font-medium text-gray-700 max-w-[80px] truncate">{currentUserName}</span>
+                    </div>
                     <input
                       type="text"
                       placeholder="Type a message…"
                       value={composing[conv.id]?.content ?? ''}
-                      onChange={(e) => setCompose(conv.id, 'content', e.target.value)}
+                      onChange={(e) => setCompose(conv.id, e.target.value)}
                       onKeyDown={(e) => { if (e.key === 'Enter') handleSend(conv); }}
                       className="flex-1 text-sm border border-gray-200 rounded-lg px-2 py-1.5 focus:outline-none focus:ring-2 focus:ring-gray-300"
                     />
                     <button
                       onClick={() => handleSend(conv)}
-                      disabled={sending === conv.id}
+                      disabled={sending === conv.id || !currentUserName}
                       className="p-1.5 bg-gray-900 text-white rounded-lg hover:bg-gray-700 disabled:opacity-50 transition-colors"
                     >
                       {sending === conv.id

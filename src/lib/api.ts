@@ -3,6 +3,21 @@ import type { Conversation, Message, MeetingProposal } from './database.types';
 import type { CalendarEvent } from './calendar';
 import { analyzeConversation as analyzeLocally } from './analyzer';
 
+export interface UserProfile {
+  id: string;
+  display_name: string;
+  avatar_url: string | null;
+}
+
+export async function getProfiles(): Promise<UserProfile[]> {
+  const { data, error } = await supabase
+    .from('profiles')
+    .select('id, display_name, avatar_url')
+    .order('display_name', { ascending: true });
+  if (error) throw error;
+  return data ?? [];
+}
+
 export function proposalToCalendarEvent(p: MeetingProposal): CalendarEvent {
   const start = new Date(p.scheduled_at!);
   const end = new Date(start.getTime() + p.suggested_duration_mins * 60_000);
