@@ -44,6 +44,7 @@ export default function MeetingProposalCard({ proposal, onUpdated }: Props) {
   const [scheduleTime, setScheduleTime] = useState('');
   const [showScheduler, setShowScheduler] = useState(false);
   const [loading, setLoading] = useState(false);
+  const [actionError, setActionError] = useState<string | null>(null);
   const [suggestedSlots, setSuggestedSlots] = useState<FreeSlot[]>([]);
   const [loadingSlots, setLoadingSlots] = useState(false);
 
@@ -93,20 +94,26 @@ export default function MeetingProposalCard({ proposal, onUpdated }: Props) {
   const triggeredSignals = (proposal.triggered_signals ?? []) as SignalHit[];
 
   async function handleAccept() {
+    setActionError(null);
     setLoading(true);
     try {
       const updated = await updateProposalStatus(proposal.id, 'accepted');
       onUpdated(updated);
+    } catch (err) {
+      setActionError(err instanceof Error ? err.message : 'Failed to update proposal. You may not have permission to edit this item.');
     } finally {
       setLoading(false);
     }
   }
 
   async function handleDecline() {
+    setActionError(null);
     setLoading(true);
     try {
       const updated = await updateProposalStatus(proposal.id, 'declined');
       onUpdated(updated);
+    } catch (err) {
+      setActionError(err instanceof Error ? err.message : 'Failed to update proposal. You may not have permission to edit this item.');
     } finally {
       setLoading(false);
     }
@@ -114,12 +121,15 @@ export default function MeetingProposalCard({ proposal, onUpdated }: Props) {
 
   async function handleSchedule() {
     if (!scheduleDate || !scheduleTime) return;
+    setActionError(null);
     setLoading(true);
     try {
       const dt = new Date(`${scheduleDate}T${scheduleTime}`).toISOString();
       const updated = await updateProposalStatus(proposal.id, 'scheduled', dt);
       onUpdated(updated);
       setShowScheduler(false);
+    } catch (err) {
+      setActionError(err instanceof Error ? err.message : 'Failed to schedule. You may not have permission to edit this item.');
     } finally {
       setLoading(false);
     }
@@ -332,6 +342,13 @@ export default function MeetingProposalCard({ proposal, onUpdated }: Props) {
               </button>
             </div>
           )}
+        </div>
+      )}
+
+      {/* Error message */}
+      {actionError && (
+        <div className="mx-4 mb-2 px-3 py-2 bg-red-50 border border-red-200 rounded-lg text-xs text-red-700">
+          {actionError}
         </div>
       )}
 

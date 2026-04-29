@@ -107,9 +107,12 @@ export async function updateProposalStatus(
   status: MeetingProposal['status'],
   scheduledAt?: string
 ): Promise<MeetingProposal> {
+  const patch: Record<string, unknown> = { status };
+  if (scheduledAt !== undefined) patch.scheduled_at = scheduledAt;
+
   const { data, error } = await supabase
     .from('meeting_proposals')
-    .update({ status, scheduled_at: scheduledAt ?? null })
+    .update(patch)
     .eq('id', id)
     .select()
     .single();
