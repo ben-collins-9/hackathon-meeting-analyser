@@ -1,6 +1,35 @@
 import { supabase } from './supabase';
 import type { Conversation, Message, MeetingProposal } from './database.types';
+import type { CalendarEvent } from './calendar';
 import { analyzeConversation as analyzeLocally } from './analyzer';
+
+// Convert a scheduled MeetingProposal into a CalendarEvent for the calendar view.
+export function proposalToCalendarEvent(p: MeetingProposal): CalendarEvent {
+  const start = new Date(p.scheduled_at!);
+  const end = new Date(start.getTime() + p.suggested_duration_mins * 60_000);
+  const participants = p.participants as string[];
+  return {
+    id: `proposal-${p.id}`,
+    title: p.title,
+    description: p.summary,
+    startAt: start.toISOString(),
+    endAt: end.toISOString(),
+    attendees: participants.map((name) => ({ name, email: '', status: 'accepted' as const })),
+    agendaItems: p.agenda_items as string[],
+    category: 'meeting',
+    source: 'local',
+  };
+}
+
+export async function getScheduledProposalEvents(): Promise<CalendarEvent[]> {
+  const { data, error } = await supabase
+    .from('meeting_proposals')
+    .select('*')
+    .eq('status', 'scheduled')
+    .not('scheduled_at', 'is', null);
+  if (error) throw error;
+  return (data ?? []).map(proposalToCalendarEvent);
+}
 
 export async function getConversations(): Promise<Conversation[]> {
   const { data, error } = await supabase

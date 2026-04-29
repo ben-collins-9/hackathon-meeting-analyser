@@ -17,6 +17,7 @@ export default function App() {
   const [proposals, setProposals] = useState<MeetingProposal[]>([]);
   const [showModal, setShowModal] = useState(false);
   const [loading, setLoading] = useState(true);
+  const [calendarRefreshKey, setCalendarRefreshKey] = useState(0);
 
   const loadData = useCallback(async () => {
     const [convs, props] = await Promise.all([getConversations(), getMeetingProposals()]);
@@ -58,6 +59,9 @@ export default function App() {
 
   function handleProposalUpdated(updated: MeetingProposal) {
     setProposals((prev) => prev.map((p) => (p.id === updated.id ? updated : p)));
+    if (updated.status === 'scheduled') {
+      setCalendarRefreshKey((k) => k + 1);
+    }
   }
 
   const pendingCount = proposals.filter((p) => p.status === 'pending').length;
@@ -133,7 +137,12 @@ export default function App() {
           {NAV_TABS.map((t) => (
             <button
               key={t.id}
-              onClick={() => setTab(t.id)}
+              onClick={() => {
+                if (t.id === 'calendar' && tab !== 'calendar') {
+                  setCalendarRefreshKey((k) => k + 1);
+                }
+                setTab(t.id);
+              }}
               className={`relative inline-flex items-center gap-1.5 px-4 py-2.5 text-sm font-medium transition-colors ${
                 tab === t.id ? 'text-gray-900 border-b-2 border-gray-900 -mb-px' : 'text-gray-500 hover:text-gray-700'
               }`}
@@ -156,7 +165,7 @@ export default function App() {
           </div>
         ) : tab === 'calendar' ? (
           <div className="flex-1 min-h-0 pt-4" style={{ height: 'calc(100vh - 160px)' }}>
-            <CalendarPage />
+            <CalendarPage refreshKey={calendarRefreshKey} />
           </div>
         ) : tab === 'conversations' ? (
           <ConversationPanel
