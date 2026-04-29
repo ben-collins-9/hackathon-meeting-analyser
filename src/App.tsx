@@ -201,11 +201,11 @@ export default function App() {
                     </div>
                   </div>
                 )}
-                {sortedProposals.filter((p) => p.status !== 'pending').length > 0 && (
+                {sortedProposals.filter((p) => p.status === 'scheduled').length > 0 && (
                   <div>
-                    <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-2 mt-6">Resolved</p>
+                    <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-2 mt-6">Scheduled</p>
                     <div className="space-y-3">
-                      {sortedProposals.filter((p) => p.status !== 'pending').map((p) => (
+                      {sortedProposals.filter((p) => p.status === 'scheduled').map((p) => (
                         <MeetingProposalCard key={p.id} proposal={p} onUpdated={handleProposalUpdated} />
                       ))}
                     </div>

@@ -151,22 +151,35 @@ export default function MeetingProposalCard({ proposal, onUpdated }: Props) {
           </button>
         </div>
 
+        {/* Scheduled date — prominent display for scheduled meetings */}
+        {proposal.status === 'scheduled' && proposal.scheduled_at && (
+          <div className="mt-3 flex items-center gap-2 bg-blue-50 border border-blue-100 rounded-lg px-3 py-2">
+            <Calendar size={14} className="text-blue-500 shrink-0" />
+            <div>
+              <p className="text-xs font-semibold text-blue-700">
+                {new Date(proposal.scheduled_at).toLocaleDateString(undefined, { weekday: 'long', month: 'long', day: 'numeric', year: 'numeric' })}
+              </p>
+              <p className="text-xs text-blue-500">
+                {new Date(proposal.scheduled_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                {' · '}{proposal.suggested_duration_mins} min
+              </p>
+            </div>
+          </div>
+        )}
+
         {/* Quick stats row */}
         <div className="flex items-center gap-4 mt-3 flex-wrap">
-          <span className="inline-flex items-center gap-1 text-xs text-gray-500">
-            <Clock size={12} /> {proposal.suggested_duration_mins} min
-          </span>
+          {proposal.status !== 'scheduled' && (
+            <span className="inline-flex items-center gap-1 text-xs text-gray-500">
+              <Clock size={12} /> {proposal.suggested_duration_mins} min
+            </span>
+          )}
           <span className="inline-flex items-center gap-1 text-xs text-gray-500">
             <Users size={12} /> {participants.length} attendee{participants.length !== 1 ? 's' : ''}
           </span>
           {proposal.analysis_score != null && (
             <span className="inline-flex items-center gap-1 text-xs text-gray-500">
               <Activity size={12} /> Score: {proposal.analysis_score}
-            </span>
-          )}
-          {proposal.scheduled_at && (
-            <span className="inline-flex items-center gap-1 text-xs text-blue-600">
-              <Calendar size={12} /> {new Date(proposal.scheduled_at).toLocaleString([], { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })}
             </span>
           )}
         </div>
@@ -349,16 +362,6 @@ export default function MeetingProposalCard({ proposal, onUpdated }: Props) {
         </div>
       )}
 
-      {proposal.status === 'accepted' && (
-        <div className="px-4 py-3 border-t border-gray-100">
-          <button
-            onClick={() => { setShowScheduler((p) => !p); setExpanded(true); }}
-            className="w-full inline-flex items-center justify-center gap-1.5 py-1.5 text-xs bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
-          >
-            <Calendar size={13} /> Schedule it
-          </button>
-        </div>
-      )}
     </div>
   );
 }
