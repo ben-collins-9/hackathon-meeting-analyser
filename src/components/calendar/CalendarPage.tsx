@@ -1,8 +1,8 @@
 import { useState, useEffect, useCallback } from 'react';
 import { ChevronLeft, ChevronRight } from 'lucide-react';
 import type { CalendarEvent } from '../../lib/calendar';
-import { localProvider, startOfWeek, addDays, isSameDay } from '../../lib/calendar';
-import { getScheduledProposalEvents } from '../../lib/api';
+import { localProvider, startOfWeek, addDays, isSameDay, applyLocalEventOverride } from '../../lib/calendar';
+import { getScheduledProposalEvents, shortenProposalEvent, deleteProposalEvent } from '../../lib/api';
 import MonthView from './MonthView';
 import WeekView from './WeekView';
 import DayView from './DayView';
@@ -208,7 +208,35 @@ export default function CalendarPage({ refreshKey = 0 }: Props) {
             setSelectedEvent(interceptEvent);
             setInterceptEvent(null);
           }}
-          onClose={() => setInterceptEvent(null)}
+          onClose={() => {
+            setInterceptEvent(null);
+          }}
+          onShortenEvent={async (evt, newDurationMins) => {
+            if (evt.id.startsWith('proposal-')) {
+              const proposalId = evt.id.replace('proposal-', '');
+              await shortenProposalEvent(proposalId, newDurationMins);
+            } else {
+              const newEndAt = new Date(new Date(evt.startAt).getTime() + newDurationMins * 60_000).toISOString();
+              applyLocalEventOverride(evt.id, { endAt: newEndAt });
+            }
+            setEvents((prev) =>
+              prev.map((e) =>
+                e.id === evt.id
+                  ? { ...e, endAt: new Date(new Date(evt.startAt).getTime() + newDurationMins * 60_000).toISOString() }
+                  : e
+              )
+            );
+          }}
+          onDeleteEvent={async (evt) => {
+            if (evt.id.startsWith('proposal-')) {
+              const proposalId = evt.id.replace('proposal-', '');
+              await deleteProposalEvent(proposalId);
+            } else {
+              applyLocalEventOverride(evt.id, null);
+            }
+            setEvents((prev) => prev.filter((e) => e.id !== evt.id));
+            setInterceptEvent(null);
+          }}
         />
       )}
 

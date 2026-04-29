@@ -243,6 +243,22 @@ export async function upsertPendingProposal(
   return data;
 }
 
+export async function shortenProposalEvent(proposalId: string, durationMins: number): Promise<void> {
+  const { error } = await supabase
+    .from('meeting_proposals')
+    .update({ suggested_duration_mins: durationMins })
+    .eq('id', proposalId);
+  if (error) throw error;
+}
+
+export async function deleteProposalEvent(proposalId: string): Promise<void> {
+  const { error } = await supabase
+    .from('meeting_proposals')
+    .update({ status: 'declined' })
+    .eq('id', proposalId);
+  if (error) throw error;
+}
+
 export async function deleteConversation(id: string): Promise<void> {
   const { error } = await supabase.from('conversations').delete().eq('id', id);
   if (error) throw error;

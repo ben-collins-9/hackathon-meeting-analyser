@@ -420,13 +420,27 @@ export const MOCK_EVENTS: CalendarEvent[] = [
 // Local provider (mock) — conforms to CalendarProvider interface
 // ---------------------------------------------------------------------------
 
+// Mutable overlay for local mock events (duration updates, deletions).
+// Keys are event ids; value is null (deleted) or a partial override.
+const LOCAL_OVERRIDES: Map<string, Partial<CalendarEvent> | null> = new Map();
+
+export function applyLocalEventOverride(id: string, patch: Partial<CalendarEvent> | null): void {
+  LOCAL_OVERRIDES.set(id, patch);
+}
+
 export const localProvider: CalendarProvider = {
   name: 'Local (Mock)',
   async listEvents(from: Date, to: Date): Promise<CalendarEvent[]> {
-    return MOCK_EVENTS.filter((e) => {
-      const start = new Date(e.startAt);
-      return start >= from && start <= to;
-    });
+    return MOCK_EVENTS
+      .filter((e) => LOCAL_OVERRIDES.get(e.id) !== null)
+      .map((e) => {
+        const override = LOCAL_OVERRIDES.get(e.id);
+        return override ? { ...e, ...override } : e;
+      })
+      .filter((e) => {
+        const start = new Date(e.startAt);
+        return start >= from && start <= to;
+      });
   },
 };
 

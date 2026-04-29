@@ -185,9 +185,15 @@ interface Props {
   event: CalendarEvent;
   onProceed: () => void;
   onClose: () => void;
+  /** Called when user picks a duration-reducing alternative (quick_call). New duration in minutes. */
+  onShortenEvent?: (event: CalendarEvent, newDurationMins: number) => Promise<void>;
+  /** Called when user picks an alternative that eliminates the meeting. */
+  onDeleteEvent?: (event: CalendarEvent) => Promise<void>;
 }
 
-export default function MeetingInterceptModal({ event, onProceed, onClose }: Props) {
+const QUICK_CALL_DURATION = 15;
+
+export default function MeetingInterceptModal({ event, onProceed, onClose, onShortenEvent, onDeleteEvent }: Props) {
   const [result] = useState<CriticalityResult>(() => assessCriticality(event));
   const [selected, setSelected] = useState<AlternativeType | null>(null);
   const [showBreakdown, setShowBreakdown] = useState(false);
@@ -205,7 +211,6 @@ export default function MeetingInterceptModal({ event, onProceed, onClose }: Pro
   }, [result]);
 
   async function persist(chosenAlternative: string | null, proceeded: boolean) {
-    setSaving(true);
     try {
       await saveMeetingOptimization({
         event_id: event.id,
@@ -218,15 +223,23 @@ export default function MeetingInterceptModal({ event, onProceed, onClose }: Pro
       });
     } catch {
       // Non-blocking — don't fail UX over analytics write
-    } finally {
-      setSaving(false);
     }
   }
 
   async function handleChooseAlternative() {
     if (!selected) return;
-    await persist(selected, false);
-    setDone(true);
+    setSaving(true);
+    try {
+      await persist(selected, false);
+      if (selected === 'quick_call' && onShortenEvent) {
+        await onShortenEvent(event, QUICK_CALL_DURATION);
+      } else if (selected !== 'quick_call' && onDeleteEvent) {
+        await onDeleteEvent(event);
+      }
+      setDone(true);
+    } finally {
+      setSaving(false);
+    }
   }
 
   async function handleProceed() {
@@ -236,22 +249,27 @@ export default function MeetingInterceptModal({ event, onProceed, onClose }: Pro
 
   if (done) {
     const chosenAlt = result.suggestedAlternatives.find((a) => a.type === selected);
+    const wasShortened = selected === 'quick_call';
     return (
       <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/40 backdrop-blur-sm">
         <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md p-8 text-center">
           <div className="w-14 h-14 bg-emerald-100 rounded-full flex items-center justify-center mx-auto mb-4">
             <CheckCircle2 size={28} className="text-emerald-600" />
           </div>
-          <h2 className="text-lg font-semibold text-gray-900 mb-2">Great choice!</h2>
+          <h2 className="text-lg font-semibold text-gray-900 mb-2">
+            {wasShortened ? 'Meeting shortened!' : 'Meeting removed!'}
+          </h2>
           <p className="text-sm text-gray-500 leading-relaxed mb-6">
-            You chose <span className="font-medium text-gray-800">{chosenAlt?.title}</span> instead of attending this meeting.
-            This choice has been saved to your optimization history.
+            {wasShortened
+              ? <>The meeting has been shortened to <span className="font-medium text-gray-800">{QUICK_CALL_DURATION} minutes</span>. You chose <span className="font-medium text-gray-800">{chosenAlt?.title}</span> to keep it focused.</>
+              : <>The meeting has been removed from your calendar. You chose <span className="font-medium text-gray-800">{chosenAlt?.title}</span> as a more efficient alternative.</>
+            }
           </p>
           <button
             onClick={onClose}
             className="w-full py-2.5 bg-gray-900 text-white rounded-xl text-sm font-medium hover:bg-gray-700 transition-colors"
           >
-            Close
+            Done
           </button>
         </div>
       </div>
