@@ -309,28 +309,64 @@ Deno.serve(async (req: Request) => {
     const result = analyzeConversation(body.title, body.platform, body.participants, body.messages);
 
     if (result.needs_meeting) {
-      const { data, error } = await supabase
+      // Find any existing proposal for this conversation (one per thread rule)
+      const { data: existing } = await supabase
         .from("meeting_proposals")
-        .insert({
-          conversation_id: body.conversation_id,
-          title: result.title,
-          summary: result.summary,
-          urgency: result.urgency,
-          suggested_duration_mins: result.suggested_duration_mins,
-          agenda_items: result.agenda_items,
-          participants: result.participants,
-          status: "pending",
-          triggered_signals: result.triggered_signals,
-          analysis_score: result.score,
-          confidence: result.confidence,
-        })
-        .select()
-        .single();
+        .select("id, status")
+        .eq("conversation_id", body.conversation_id)
+        .order("created_at", { ascending: false })
+        .limit(1)
+        .maybeSingle();
 
-      if (error) throw error;
+      // If already scheduled, return it as-is without overwriting
+      if (existing?.status === "scheduled") {
+        const { data: scheduled } = await supabase
+          .from("meeting_proposals")
+          .select("*")
+          .eq("id", existing.id)
+          .single();
+        return new Response(
+          JSON.stringify({ needs_meeting: true, proposal: scheduled, analysis: result }),
+          { headers: { ...corsHeaders, "Content-Type": "application/json" } }
+        );
+      }
+
+      const payload = {
+        conversation_id: body.conversation_id,
+        title: result.title,
+        summary: result.summary,
+        urgency: result.urgency,
+        suggested_duration_mins: result.suggested_duration_mins,
+        agenda_items: result.agenda_items,
+        participants: result.participants,
+        status: "pending",
+        triggered_signals: result.triggered_signals,
+        analysis_score: result.score,
+        confidence: result.confidence,
+      };
+
+      let proposal;
+      if (existing) {
+        const { data, error } = await supabase
+          .from("meeting_proposals")
+          .update(payload)
+          .eq("id", existing.id)
+          .select()
+          .single();
+        if (error) throw error;
+        proposal = data;
+      } else {
+        const { data, error } = await supabase
+          .from("meeting_proposals")
+          .insert(payload)
+          .select()
+          .single();
+        if (error) throw error;
+        proposal = data;
+      }
 
       return new Response(
-        JSON.stringify({ needs_meeting: true, proposal: data, analysis: result }),
+        JSON.stringify({ needs_meeting: true, proposal, analysis: result }),
         { headers: { ...corsHeaders, "Content-Type": "application/json" } }
       );
     }

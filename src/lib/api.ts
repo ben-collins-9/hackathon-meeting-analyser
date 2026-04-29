@@ -165,19 +165,30 @@ export async function saveLocalProposal(conversationId: string, analysis: Return
   return data;
 }
 
-// Upsert the pending proposal for a conversation — creates or updates the existing
-// pending one so repeated auto-analyses don't accumulate duplicate proposals.
+// Upsert the proposal for a conversation — at most one proposal per conversation.
+// If an existing proposal is already scheduled, it is left untouched.
 export async function upsertPendingProposal(
   conversationId: string,
   analysis: ReturnType<typeof analyzeLocally>
 ): Promise<MeetingProposal> {
-  // Check for an existing pending proposal for this conversation
+  // Find any existing proposal for this conversation (regardless of status)
   const { data: existing } = await supabase
     .from('meeting_proposals')
-    .select('id')
+    .select('id, status')
     .eq('conversation_id', conversationId)
-    .eq('status', 'pending')
+    .order('created_at', { ascending: false })
+    .limit(1)
     .maybeSingle();
+
+  // Never overwrite a scheduled meeting with fresh analysis
+  if (existing && existing.status === 'scheduled') {
+    const { data } = await supabase
+      .from('meeting_proposals')
+      .select('*')
+      .eq('id', existing.id)
+      .single();
+    return data!;
+  }
 
   const payload = {
     conversation_id: conversationId,

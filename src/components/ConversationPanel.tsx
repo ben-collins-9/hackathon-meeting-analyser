@@ -77,19 +77,19 @@ export default function ConversationPanel({
       const analysis = result.analysis;
       let proposalSaved = false;
 
-      if (result.needs_meeting && analysis) {
-        // Always auto-save/update the proposal — no user prompt needed
+      if (result.source === 'edge' && result.proposal) {
+        // Edge function already persisted/upserted the proposal server-side
+        proposalSaved = true;
+        onAnalysisComplete();
+      } else if (result.needs_meeting && analysis) {
+        // Local fallback: persist via client (edge function unavailable)
         try {
           await upsertPendingProposal(conv.id, analysis);
           proposalSaved = true;
           onAnalysisComplete();
         } catch {
-          // Silent — proposal will still show in UI even if persist fails
+          // Silent — UI still reflects the analysis result
         }
-      } else if (result.source === 'edge' && result.proposal) {
-        // Edge function already persisted the proposal
-        proposalSaved = true;
-        onAnalysisComplete();
       }
 
       setAnalysis(conv.id, {
