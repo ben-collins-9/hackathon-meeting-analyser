@@ -1,8 +1,10 @@
-import { useState } from 'react';
-import { Plus, Send, Trash2, Zap, ChevronDown, ChevronUp, Users, Tag, Save, CheckCircle2 } from 'lucide-react';
+import { useState, useEffect, useRef, useCallback } from 'react';
+import { Plus, Send, Trash2, ChevronDown, ChevronUp, Users, Tag, CheckCircle2, Loader2 } from 'lucide-react';
 import type { Conversation, Message } from '../lib/database.types';
 import type { AnalysisResult } from '../lib/analyzer';
-import { addMessage, analyzeConversation, deleteConversation, saveLocalProposal } from '../lib/api';
+import { addMessage, analyzeConversation, deleteConversation, upsertPendingProposal } from '../lib/api';
+
+const ANALYSIS_DEBOUNCE_MS = 1200;
 
 const PLATFORM_COLORS: Record<string, string> = {
   slack: 'bg-emerald-100 text-emerald-700',
@@ -22,12 +24,16 @@ const SIGNAL_CATEGORY_COLORS: Record<string, string> = {
   frustration: 'bg-pink-100 text-pink-700 border-pink-200',
 };
 
-interface LocalResult {
-  needs_meeting: boolean;
-  summary: string;
-  analysis?: AnalysisResult;
-  source: 'edge' | 'local';
-  saved?: boolean;
+type AnalysisStatus = 'idle' | 'analysing' | 'done';
+
+interface AnalysisState {
+  status: AnalysisStatus;
+  result?: {
+    needs_meeting: boolean;
+    summary: string;
+    analysis?: AnalysisResult;
+    proposalSaved: boolean;
+  };
 }
 
 interface Props {
@@ -49,12 +55,75 @@ export default function ConversationPanel({
 }: Props) {
   const [expanded, setExpanded] = useState<string | null>(null);
   const [composing, setComposing] = useState<Record<string, { author: string; content: string }>>({});
-  const [analyzing, setAnalyzing] = useState<string | null>(null);
-  const [saving, setSaving] = useState<string | null>(null);
-  const [results, setResults] = useState<Record<string, LocalResult>>({});
+  const [analysisState, setAnalysisState] = useState<Record<string, AnalysisState>>({});
 
-  function toggleExpand(id: string) {
-    setExpanded((prev) => (prev === id ? null : id));
+  // Debounce timers per conversation
+  const debounceRefs = useRef<Record<string, ReturnType<typeof setTimeout>>>({});
+
+  function setAnalysis(convId: string, update: Partial<AnalysisState>) {
+    setAnalysisState((prev) => ({ ...prev, [convId]: { ...(prev[convId] ?? { status: 'idle' }), ...update } }));
+  }
+
+  const runAnalysis = useCallback(async (conv: Conversation, msgs: Message[]) => {
+    if (msgs.length === 0) return;
+
+    setAnalysis(conv.id, { status: 'analysing' });
+
+    try {
+      const result = await analyzeConversation(conv, msgs);
+      const analysis = result.analysis;
+      let proposalSaved = false;
+
+      if (result.needs_meeting && analysis) {
+        // Always auto-save/update the proposal — no user prompt needed
+        try {
+          await upsertPendingProposal(conv.id, analysis);
+          proposalSaved = true;
+          onAnalysisComplete();
+        } catch {
+          // Silent — proposal will still show in UI even if persist fails
+        }
+      } else if (result.source === 'edge' && result.proposal) {
+        // Edge function already persisted the proposal
+        proposalSaved = true;
+        onAnalysisComplete();
+      }
+
+      setAnalysis(conv.id, {
+        status: 'done',
+        result: {
+          needs_meeting: result.needs_meeting,
+          summary: result.summary ?? analysis?.summary ?? '',
+          analysis,
+          proposalSaved,
+        },
+      });
+    } catch {
+      setAnalysis(conv.id, { status: 'idle' });
+    }
+  }, [onAnalysisComplete]);
+
+  // Trigger auto-analysis with debounce whenever messages change for an expanded conversation
+  function scheduleAnalysis(conv: Conversation, msgs: Message[]) {
+    if (debounceRefs.current[conv.id]) clearTimeout(debounceRefs.current[conv.id]);
+    debounceRefs.current[conv.id] = setTimeout(() => {
+      runAnalysis(conv, msgs);
+    }, ANALYSIS_DEBOUNCE_MS);
+  }
+
+  function toggleExpand(conv: Conversation) {
+    setExpanded((prev) => {
+      const next = prev === conv.id ? null : conv.id;
+      // Trigger analysis when expanding a conversation that hasn't been analysed yet
+      if (next === conv.id) {
+        const msgs = messages[conv.id] ?? [];
+        const state = analysisState[conv.id];
+        if (msgs.length > 0 && (!state || state.status === 'idle')) {
+          scheduleAnalysis(conv, msgs);
+        }
+      }
+      return next;
+    });
   }
 
   function setCompose(id: string, field: 'author' | 'content', value: string) {
@@ -67,47 +136,22 @@ export default function ConversationPanel({
     const msg = await addMessage(conv.id, c.author.trim(), c.content.trim());
     onMessageAdded(conv.id, msg);
     setComposing((prev) => ({ ...prev, [conv.id]: { author: c.author, content: '' } }));
-  }
 
-  async function handleAnalyze(conv: Conversation) {
-    const msgs = messages[conv.id] ?? [];
-    if (msgs.length === 0) return;
-    setAnalyzing(conv.id);
-    try {
-      const result = await analyzeConversation(conv, msgs);
-      setResults((prev) => ({
-        ...prev,
-        [conv.id]: {
-          needs_meeting: result.needs_meeting,
-          summary: result.needs_meeting ? (result.proposal?.summary ?? result.analysis?.summary ?? '') : (result.summary ?? result.analysis?.summary ?? ''),
-          analysis: result.analysis,
-          source: result.source,
-          saved: result.source === 'edge' && result.needs_meeting,
-        },
-      }));
-      if (result.source === 'edge') onAnalysisComplete();
-    } finally {
-      setAnalyzing(null);
-    }
-  }
-
-  async function handleSaveProposal(convId: string) {
-    const r = results[convId];
-    if (!r?.analysis) return;
-    setSaving(convId);
-    try {
-      await saveLocalProposal(convId, r.analysis);
-      setResults((prev) => ({ ...prev, [convId]: { ...prev[convId], saved: true } }));
-      onAnalysisComplete();
-    } finally {
-      setSaving(null);
-    }
+    // Auto-analyse after every message
+    const updatedMsgs = [...(messages[conv.id] ?? []), msg];
+    scheduleAnalysis(conv, updatedMsgs);
   }
 
   async function handleDelete(id: string) {
     await deleteConversation(id);
     onConversationDeleted(id);
   }
+
+  // Clean up debounce timers on unmount
+  useEffect(() => {
+    const refs = debounceRefs.current;
+    return () => { Object.values(refs).forEach(clearTimeout); };
+  }, []);
 
   if (conversations.length === 0) {
     return (
@@ -131,17 +175,18 @@ export default function ConversationPanel({
       {conversations.map((conv) => {
         const msgs = messages[conv.id] ?? [];
         const isExpanded = expanded === conv.id;
-        const result = results[conv.id];
+        const aState = analysisState[conv.id] ?? { status: 'idle' };
+        const result = aState.result;
+        const analysis = result?.analysis;
         const platformColor = PLATFORM_COLORS[conv.platform] ?? 'bg-gray-100 text-gray-700';
         const participants = conv.participants as string[];
-        const analysis = result?.analysis;
 
         return (
           <div key={conv.id} className="bg-white rounded-xl border border-gray-200 overflow-hidden shadow-sm hover:shadow-md transition-shadow">
             {/* Header */}
             <div
               className="flex items-center gap-3 px-4 py-3 cursor-pointer select-none"
-              onClick={() => toggleExpand(conv.id)}
+              onClick={() => toggleExpand(conv)}
             >
               <div className="flex-1 min-w-0">
                 <div className="flex items-center gap-2 flex-wrap">
@@ -157,8 +202,15 @@ export default function ConversationPanel({
                   <p className="text-xs text-gray-400 mt-0.5 truncate">{participants.join(', ')}</p>
                 )}
               </div>
+
               <div className="flex items-center gap-2 shrink-0">
-                {result && (
+                {/* Analysis status indicator */}
+                {aState.status === 'analysing' && (
+                  <span className="inline-flex items-center gap-1 text-xs text-gray-400">
+                    <Loader2 size={11} className="animate-spin" /> Analysing…
+                  </span>
+                )}
+                {aState.status === 'done' && result && (
                   <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${result.needs_meeting ? 'bg-amber-100 text-amber-700' : 'bg-green-100 text-green-700'}`}>
                     {result.needs_meeting ? 'Meeting needed' : 'Async OK'}
                   </span>
@@ -167,18 +219,13 @@ export default function ConversationPanel({
               </div>
             </div>
 
-            {/* Analysis result banner */}
+            {/* Analysis result — shown when expanded */}
             {result && isExpanded && (
               <div className={`mx-4 mb-1 rounded-lg text-xs overflow-hidden border ${result.needs_meeting ? 'border-amber-200' : 'border-green-200'}`}>
                 <div className={`px-3 py-2 ${result.needs_meeting ? 'bg-amber-50 text-amber-800' : 'bg-green-50 text-green-800'}`}>
-                  <div className="flex items-start justify-between gap-2">
-                    <p className="leading-relaxed">{result.summary}</p>
-                    {result.source === 'local' && (
-                      <span className="shrink-0 text-xs bg-white border border-gray-200 text-gray-500 rounded px-1.5 py-0.5 font-mono">local</span>
-                    )}
-                  </div>
+                  <p className="leading-relaxed">{result.summary}</p>
 
-                  {/* Signal chips */}
+                  {/* Triggered signal chips */}
                   {analysis && analysis.triggered_signals.length > 0 && (
                     <div className="flex flex-wrap gap-1.5 mt-2">
                       {analysis.triggered_signals.map((s) => (
@@ -202,36 +249,18 @@ export default function ConversationPanel({
 
                   {/* Score + confidence */}
                   {analysis && (
-                    <div className="flex items-center gap-3 mt-2">
-                      <span className="text-xs opacity-70">Score: <strong>{analysis.score}</strong></span>
-                      <span className="text-xs opacity-70">Confidence: <strong>{analysis.confidence}</strong></span>
+                    <div className="flex items-center gap-3 mt-2 opacity-70">
+                      <span>Score: <strong>{analysis.score}</strong></span>
+                      <span>Confidence: <strong>{analysis.confidence}</strong></span>
                     </div>
                   )}
                 </div>
 
-                {/* Save prompt for local results */}
-                {result.source === 'local' && result.needs_meeting && !result.saved && (
-                  <div className="bg-white border-t border-amber-100 px-3 py-2 flex items-center justify-between">
-                    <span className="text-xs text-gray-500">Analyzed locally — save this proposal?</span>
-                    <button
-                      onClick={() => handleSaveProposal(conv.id)}
-                      disabled={saving === conv.id}
-                      className="inline-flex items-center gap-1 text-xs bg-gray-900 text-white px-2.5 py-1 rounded-lg hover:bg-gray-700 disabled:opacity-50 transition-colors"
-                    >
-                      {saving === conv.id ? (
-                        <span className="w-3 h-3 border-2 border-white border-t-transparent rounded-full animate-spin" />
-                      ) : (
-                        <Save size={11} />
-                      )}
-                      Save proposal
-                    </button>
-                  </div>
-                )}
-
-                {result.saved && result.needs_meeting && (
-                  <div className="bg-white border-t border-green-100 px-3 py-1.5 flex items-center gap-1.5">
+                {/* Saved confirmation */}
+                {result.proposalSaved && result.needs_meeting && (
+                  <div className="bg-white border-t border-amber-100 px-3 py-1.5 flex items-center gap-1.5">
                     <CheckCircle2 size={12} className="text-green-500" />
-                    <span className="text-xs text-green-700">Proposal saved — view in Meeting Proposals tab</span>
+                    <span className="text-xs text-green-700">Proposal saved — review in Meeting Proposals</span>
                   </div>
                 )}
               </div>
@@ -239,7 +268,7 @@ export default function ConversationPanel({
 
             {/* Expanded content */}
             {isExpanded && (
-              <div className="border-t border-gray-100 mt-3">
+              <div className="border-t border-gray-100 mt-1">
                 {/* Messages */}
                 <div className="px-4 py-3 max-h-72 overflow-y-auto space-y-2 bg-gray-50">
                   {msgs.length === 0 ? (
@@ -253,7 +282,9 @@ export default function ConversationPanel({
                         <div className="flex-1 min-w-0">
                           <div className="flex items-baseline gap-2">
                             <span className="text-xs font-semibold text-gray-700">{m.author}</span>
-                            <span className="text-xs text-gray-400">{new Date(m.sent_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</span>
+                            <span className="text-xs text-gray-400">
+                              {new Date(m.sent_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                            </span>
                           </div>
                           <p className="text-sm text-gray-800 mt-0.5 whitespace-pre-wrap">{m.content}</p>
                         </div>
@@ -262,7 +293,7 @@ export default function ConversationPanel({
                   )}
                 </div>
 
-                {/* Compose */}
+                {/* Compose + delete */}
                 <div className="px-4 py-3 border-t border-gray-100 space-y-2">
                   <div className="flex gap-2">
                     <input
@@ -288,7 +319,6 @@ export default function ConversationPanel({
                     </button>
                   </div>
 
-                  {/* Actions */}
                   <div className="flex items-center justify-between pt-1">
                     <button
                       onClick={() => handleDelete(conv.id)}
@@ -296,22 +326,11 @@ export default function ConversationPanel({
                     >
                       <Trash2 size={12} /> Delete
                     </button>
-                    <button
-                      onClick={() => handleAnalyze(conv)}
-                      disabled={msgs.length === 0 || analyzing === conv.id}
-                      className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-gray-900 text-white text-xs rounded-lg hover:bg-gray-700 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
-                    >
-                      {analyzing === conv.id ? (
-                        <>
-                          <span className="w-3 h-3 border-2 border-white border-t-transparent rounded-full animate-spin" />
-                          Analyzing…
-                        </>
-                      ) : (
-                        <>
-                          <Zap size={12} /> Analyze for meeting
-                        </>
-                      )}
-                    </button>
+                    {aState.status === 'analysing' && (
+                      <span className="inline-flex items-center gap-1.5 text-xs text-gray-400">
+                        <Loader2 size={12} className="animate-spin" /> Analysing conversation…
+                      </span>
+                    )}
                   </div>
                 </div>
               </div>

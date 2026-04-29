@@ -137,6 +137,54 @@ export async function saveLocalProposal(conversationId: string, analysis: Return
   return data;
 }
 
+// Upsert the pending proposal for a conversation — creates or updates the existing
+// pending one so repeated auto-analyses don't accumulate duplicate proposals.
+export async function upsertPendingProposal(
+  conversationId: string,
+  analysis: ReturnType<typeof analyzeLocally>
+): Promise<MeetingProposal> {
+  // Check for an existing pending proposal for this conversation
+  const { data: existing } = await supabase
+    .from('meeting_proposals')
+    .select('id')
+    .eq('conversation_id', conversationId)
+    .eq('status', 'pending')
+    .maybeSingle();
+
+  const payload = {
+    conversation_id: conversationId,
+    title: analysis.title,
+    summary: analysis.summary,
+    urgency: analysis.urgency,
+    suggested_duration_mins: analysis.suggested_duration_mins,
+    agenda_items: analysis.agenda_items,
+    participants: analysis.participants,
+    status: 'pending' as const,
+    triggered_signals: analysis.triggered_signals,
+    analysis_score: analysis.score,
+    confidence: analysis.confidence,
+  };
+
+  if (existing) {
+    const { data, error } = await supabase
+      .from('meeting_proposals')
+      .update(payload)
+      .eq('id', existing.id)
+      .select()
+      .single();
+    if (error) throw error;
+    return data;
+  }
+
+  const { data, error } = await supabase
+    .from('meeting_proposals')
+    .insert(payload)
+    .select()
+    .single();
+  if (error) throw error;
+  return data;
+}
+
 export async function deleteConversation(id: string): Promise<void> {
   const { error } = await supabase.from('conversations').delete().eq('id', id);
   if (error) throw error;
