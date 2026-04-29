@@ -96,12 +96,6 @@ export default function MeetingProposalCard({ proposal, onUpdated }: Props) {
     setLoading(true);
     try {
       const updated = await updateProposalStatus(proposal.id, 'accepted');
-      pendo.track('proposal_accepted', {
-        proposal_id: proposal.id,
-        urgency: proposal.urgency,
-        confidence: proposal.confidence ?? '',
-        suggested_duration_mins: proposal.suggested_duration_mins,
-      });
       onUpdated(updated);
     } finally {
       setLoading(false);
@@ -112,12 +106,6 @@ export default function MeetingProposalCard({ proposal, onUpdated }: Props) {
     setLoading(true);
     try {
       const updated = await updateProposalStatus(proposal.id, 'declined');
-      pendo.track('proposal_declined', {
-        proposal_id: proposal.id,
-        urgency: proposal.urgency,
-        confidence: proposal.confidence ?? '',
-        suggested_duration_mins: proposal.suggested_duration_mins,
-      });
       onUpdated(updated);
     } finally {
       setLoading(false);
@@ -130,13 +118,6 @@ export default function MeetingProposalCard({ proposal, onUpdated }: Props) {
     try {
       const dt = new Date(`${scheduleDate}T${scheduleTime}`).toISOString();
       const updated = await updateProposalStatus(proposal.id, 'scheduled', dt);
-      pendo.track('proposal_scheduled', {
-        proposal_id: proposal.id,
-        urgency: proposal.urgency,
-        confidence: proposal.confidence ?? '',
-        scheduled_at: dt,
-        suggested_duration_mins: proposal.suggested_duration_mins,
-      });
       onUpdated(updated);
       setShowScheduler(false);
     } finally {

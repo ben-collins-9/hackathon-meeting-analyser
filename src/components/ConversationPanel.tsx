@@ -75,16 +75,6 @@ export default function ConversationPanel({
     try {
       const result = await analyzeConversation(conv, msgs);
       const analysis = result.analysis;
-      pendo.track('conversation_analyzed', {
-        conversation_id: conv.id,
-        needs_meeting: result.needs_meeting,
-        urgency: analysis?.urgency ?? '',
-        score: analysis?.score ?? 0,
-        confidence: analysis?.confidence ?? '',
-        source: result.source ?? 'local',
-        message_count: msgs.length,
-        triggered_signal_count: analysis?.triggered_signals?.length ?? 0,
-      });
       let proposalSaved = false;
 
       if (result.source === 'edge' && result.proposal) {
@@ -95,15 +85,6 @@ export default function ConversationPanel({
         // Local fallback: persist via client (edge function unavailable)
         try {
           await upsertPendingProposal(conv.id, analysis);
-          pendo.track('proposal_saved', {
-            conversation_id: conv.id,
-            urgency: analysis.urgency ?? '',
-            confidence: analysis.confidence ?? '',
-            analysis_score: analysis.score ?? 0,
-            suggested_duration_mins: analysis.suggested_duration_mins ?? 0,
-            agenda_item_count: analysis.agenda_items?.length ?? 0,
-            participant_count: analysis.participants?.length ?? 0,
-          });
           proposalSaved = true;
           onAnalysisComplete();
         } catch {
@@ -158,11 +139,6 @@ export default function ConversationPanel({
     setSending(conv.id);
     try {
       const msg = await addMessage(conv.id, c.author.trim(), c.content.trim());
-      pendo.track('message_added', {
-        conversation_id: conv.id,
-        content_length: c.content.trim().length,
-        message_index: (messages[conv.id]?.length ?? 0),
-      });
       onMessageAdded(conv.id, msg);
       setComposing((prev) => ({ ...prev, [conv.id]: { author: c.author, content: '' } }));
 
@@ -178,9 +154,6 @@ export default function ConversationPanel({
 
   async function handleDelete(id: string) {
     await deleteConversation(id);
-    pendo.track('conversation_deleted', {
-      conversation_id: id,
-    });
     onConversationDeleted(id);
   }
 
