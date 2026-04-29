@@ -38,6 +38,11 @@ export default function NewConversationModal({ onClose, onCreated }: Props) {
     setError('');
     try {
       const conv = await createConversation(title.trim(), platform, filtered);
+      pendo.track('conversation_created', {
+        platform,
+        participant_count: filtered.length,
+        title_length: title.trim().length,
+      });
       onCreated(conv);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to create');
