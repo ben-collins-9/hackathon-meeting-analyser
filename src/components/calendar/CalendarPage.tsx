@@ -9,6 +9,7 @@ import DayView from './DayView';
 import CalendarSidebar from './CalendarSidebar';
 import EventDetailModal from './EventDetailModal';
 import MeetingReviewPanel from './MeetingReviewPanel';
+import MeetingReviewPanel from './MeetingReviewPanel';
 
 type ViewMode = 'day' | 'week' | 'month';
 
@@ -145,6 +146,9 @@ export default function CalendarPage({ refreshKey = 0 }: Props) {
               {VIEW_LABELS[v]}
             </button>
           ))}
+
+        {/* Meeting review panel */}
+        <MeetingReviewPanel onCalendarChanged={loadEvents} />
         </div>
 
         {/* Meeting review panel */}
