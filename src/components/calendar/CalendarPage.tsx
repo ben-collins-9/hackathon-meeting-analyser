@@ -9,6 +9,7 @@ import DayView from './DayView';
 import CalendarSidebar from './CalendarSidebar';
 import EventDetailModal from './EventDetailModal';
 import MeetingReviewPanel from './MeetingReviewPanel';
+import MeetingInterceptModal from './MeetingInterceptModal';
 
 type ViewMode = 'day' | 'week' | 'month';
 
@@ -49,6 +50,7 @@ export default function CalendarPage({ refreshKey = 0 }: Props) {
   const [currentDate, setCurrentDate] = useState(new Date());
   const [events, setEvents] = useState<CalendarEvent[]>([]);
   const [selectedEvent, setSelectedEvent] = useState<CalendarEvent | null>(null);
+  const [interceptEvent, setInterceptEvent] = useState<CalendarEvent | null>(null);
   const [loading, setLoading] = useState(true);
 
   const loadEvents = useCallback(async () => {
@@ -163,7 +165,7 @@ export default function CalendarPage({ refreshKey = 0 }: Props) {
               allEvents={events}
               selectedDate={currentDate}
               onSelectDate={(d) => { setCurrentDate(d); if (viewMode === 'month') setViewMode('day'); }}
-              onEventClick={setSelectedEvent}
+              onEventClick={setInterceptEvent}
             />
           </div>
 
@@ -176,7 +178,7 @@ export default function CalendarPage({ refreshKey = 0 }: Props) {
                 events={events}
                 selectedDate={currentDate}
                 onSelectDate={(d) => { setCurrentDate(d); setViewMode('day'); }}
-                onEventClick={setSelectedEvent}
+                onEventClick={setInterceptEvent}
               />
             )}
             {viewMode === 'week' && (
@@ -185,18 +187,29 @@ export default function CalendarPage({ refreshKey = 0 }: Props) {
                 events={events}
                 selectedDate={currentDate}
                 onSelectDate={setCurrentDate}
-                onEventClick={setSelectedEvent}
+                onEventClick={setInterceptEvent}
               />
             )}
             {viewMode === 'day' && (
               <DayView
                 date={currentDate}
                 events={events}
-                onEventClick={setSelectedEvent}
+                onEventClick={setInterceptEvent}
               />
             )}
           </div>
         </div>
+      )}
+
+      {interceptEvent && !selectedEvent && (
+        <MeetingInterceptModal
+          event={interceptEvent}
+          onProceed={() => {
+            setSelectedEvent(interceptEvent);
+            setInterceptEvent(null);
+          }}
+          onClose={() => setInterceptEvent(null)}
+        />
       )}
 
       {selectedEvent && (
