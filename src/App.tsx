@@ -50,7 +50,6 @@ export default function App() {
   async function handleAnalysisComplete() {
     const updated = await getMeetingProposals();
     setProposals(updated);
-    if (updated.some((p) => p.status === 'pending')) setTab('proposals');
   }
 
   function handleConversationDeleted(id: string) {
