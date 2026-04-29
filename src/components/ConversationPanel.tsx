@@ -3,6 +3,7 @@ import { Plus, Send, Trash2, ChevronDown, ChevronUp, Users, Tag, CheckCircle2, L
 import type { Conversation, Message } from '../lib/database.types';
 import type { AnalysisResult } from '../lib/analyzer';
 import { addMessage, analyzeConversation, deleteConversation, upsertPendingProposal } from '../lib/api';
+import { useAuth } from '../lib/auth';
 
 const ANALYSIS_DEBOUNCE_MS = 1200;
 
@@ -53,6 +54,9 @@ export default function ConversationPanel({
   onAnalysisComplete,
   onConversationDeleted,
 }: Props) {
+  const { profile } = useAuth();
+  const currentUserName = profile?.display_name ?? '';
+
   const [expanded, setExpanded] = useState<string | null>(null);
   const [composing, setComposing] = useState<Record<string, { author: string; content: string }>>({});
   const [analysisState, setAnalysisState] = useState<Record<string, AnalysisState>>({});
@@ -135,10 +139,11 @@ export default function ConversationPanel({
 
   async function handleSend(conv: Conversation) {
     const c = composing[conv.id];
-    if (!c?.author?.trim() || !c?.content?.trim()) return;
+    const author = currentUserName || c?.author?.trim();
+    if (!author || !c?.content?.trim()) return;
     setSending(conv.id);
     try {
-      const msg = await addMessage(conv.id, c.author.trim(), c.content.trim());
+      const msg = await addMessage(conv.id, author, c.content.trim());
       onMessageAdded(conv.id, msg);
       setComposing((prev) => ({ ...prev, [conv.id]: { author: c.author, content: '' } }));
 
@@ -316,13 +321,22 @@ export default function ConversationPanel({
                 {/* Compose + delete */}
                 <div className="px-4 py-3 border-t border-gray-100 space-y-2">
                   <div className="flex gap-2">
-                    <input
-                      type="text"
-                      placeholder="Your name"
-                      value={composing[conv.id]?.author ?? ''}
-                      onChange={(e) => setCompose(conv.id, 'author', e.target.value)}
-                      className="w-28 text-sm border border-gray-200 rounded-lg px-2 py-1.5 focus:outline-none focus:ring-2 focus:ring-gray-300"
-                    />
+                    {currentUserName ? (
+                      <div className="flex items-center gap-1.5 px-2.5 py-1.5 bg-gray-100 rounded-lg shrink-0">
+                        <div className="w-5 h-5 rounded-full bg-gray-700 text-white flex items-center justify-center text-[10px] font-bold">
+                          {currentUserName.charAt(0).toUpperCase()}
+                        </div>
+                        <span className="text-xs font-medium text-gray-700 max-w-[80px] truncate">{currentUserName}</span>
+                      </div>
+                    ) : (
+                      <input
+                        type="text"
+                        placeholder="Your name"
+                        value={composing[conv.id]?.author ?? ''}
+                        onChange={(e) => setCompose(conv.id, 'author', e.target.value)}
+                        className="w-28 text-sm border border-gray-200 rounded-lg px-2 py-1.5 focus:outline-none focus:ring-2 focus:ring-gray-300"
+                      />
+                    )}
                     <input
                       type="text"
                       placeholder="Type a message…"

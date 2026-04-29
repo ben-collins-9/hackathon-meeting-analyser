@@ -42,11 +42,12 @@ export async function getConversations(): Promise<Conversation[]> {
 export async function createConversation(
   title: string,
   platform: string,
-  participants: string[]
+  participants: string[],
+  userId?: string
 ): Promise<Conversation> {
   const { data, error } = await supabase
     .from('conversations')
-    .insert({ title, platform, participants })
+    .insert({ title, platform, participants, ...(userId ? { user_id: userId } : {}) })
     .select()
     .single();
   if (error) throw error;

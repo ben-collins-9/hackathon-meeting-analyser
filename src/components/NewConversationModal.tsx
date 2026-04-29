@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { X, Plus, Trash2 } from 'lucide-react';
 import { createConversation } from '../lib/api';
 import type { Conversation } from '../lib/database.types';
+import { useAuth } from '../lib/auth';
 
 const PLATFORMS = ['slack', 'email', 'github', 'jira', 'discord', 'teams'];
 
@@ -11,9 +12,10 @@ interface Props {
 }
 
 export default function NewConversationModal({ onClose, onCreated }: Props) {
+  const { user, profile } = useAuth();
   const [title, setTitle] = useState('');
   const [platform, setPlatform] = useState('slack');
-  const [participants, setParticipants] = useState(['', '']);
+  const [participants, setParticipants] = useState([profile?.display_name || '', '']);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
 
@@ -37,7 +39,7 @@ export default function NewConversationModal({ onClose, onCreated }: Props) {
     setLoading(true);
     setError('');
     try {
-      const conv = await createConversation(title.trim(), platform, filtered);
+      const conv = await createConversation(title.trim(), platform, filtered, user?.id);
       onCreated(conv);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to create');

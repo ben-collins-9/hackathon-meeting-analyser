@@ -2,16 +2,21 @@ import { useEffect, useState, useCallback } from 'react';
 import { Plus, Zap, BellRing, CalendarDays, BarChart2 } from 'lucide-react';
 import type { Conversation, Message, MeetingProposal } from './lib/database.types';
 import { getConversations, getMessages, getMeetingProposals, updateProposalStatus } from './lib/api';
+import { useAuth } from './lib/auth';
 import ConversationPanel from './components/ConversationPanel';
 import NewConversationModal from './components/NewConversationModal';
 import MeetingProposalCard from './components/MeetingProposalCard';
 import StatsBar from './components/StatsBar';
 import CalendarPage from './components/calendar/CalendarPage';
 import AnalyticsDashboard from './components/analytics/AnalyticsDashboard';
+import AuthPage from './components/AuthPage';
+import UserMenu from './components/UserMenu';
 
 type Tab = 'conversations' | 'proposals' | 'calendar' | 'analytics';
 
 export default function App() {
+  const { user, loading: authLoading } = useAuth();
+
   const [tab, setTab] = useState<Tab>('conversations');
   const [conversations, setConversations] = useState<Conversation[]>([]);
   const [messages, setMessages] = useState<Record<string, Message[]>>({});
@@ -35,7 +40,23 @@ export default function App() {
     setLoading(false);
   }, []);
 
-  useEffect(() => { loadData(); }, [loadData]);
+  useEffect(() => {
+    if (user) {
+      setLoading(true);
+      loadData();
+    }
+  }, [user, loadData]);
+
+  // Show full-page spinner while session is being restored
+  if (authLoading) {
+    return (
+      <div className="min-h-screen bg-gray-50 flex items-center justify-center">
+        <div className="w-8 h-8 border-2 border-gray-300 border-t-gray-700 rounded-full animate-spin" />
+      </div>
+    );
+  }
+
+  if (!user) return <AuthPage />;
 
   function handleConversationCreated(conv: Conversation) {
     setConversations((prev) => [conv, ...prev]);
@@ -95,19 +116,23 @@ export default function App() {
               <span className="ml-2 text-xs text-gray-400 hidden sm:inline">async-first communication analyzer</span>
             </div>
           </div>
-          {tab !== 'calendar' && tab !== 'analytics' && (
-            <button
-              onClick={() => setShowModal(true)}
-              className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-gray-900 text-white text-xs rounded-lg hover:bg-gray-700 transition-colors"
-            >
-              <Plus size={13} /> New conversation
-            </button>
-          )}
+
+          <div className="flex items-center gap-2">
+            {tab !== 'calendar' && tab !== 'analytics' && (
+              <button
+                onClick={() => setShowModal(true)}
+                className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-gray-900 text-white text-xs rounded-lg hover:bg-gray-700 transition-colors"
+              >
+                <Plus size={13} /> New conversation
+              </button>
+            )}
+            <UserMenu />
+          </div>
         </div>
       </header>
 
       <div className={`max-w-6xl mx-auto px-4 sm:px-6 ${tab === 'calendar' ? 'flex-1 flex flex-col min-h-0 pb-4' : 'py-6 space-y-6'}`}>
-        {/* Stats — only on non-calendar/analytics tabs */}
+        {/* Stats */}
         {!loading && tab !== 'calendar' && tab !== 'analytics' && (
           <StatsBar conversations={conversations} proposals={proposals} />
         )}

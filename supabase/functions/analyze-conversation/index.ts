@@ -149,6 +149,23 @@ const MEETING_SIGNAL_CATEGORIES = [
   FRUSTRATION_SIGNALS,
 ];
 
+// Social/casual topics — presence of 2+ of these means no work meeting should be proposed,
+// even if the thread contains words like "urgent" or "need to decide".
+const SOCIAL_PHRASES = [
+  "pub", "drinks", "beer", "wine", "cocktail", "happy hour",
+  "lunch", "dinner", "breakfast", "brunch", "coffee", "cafe",
+  "restaurant", "curry", "pizza", "takeaway", "takeout",
+  "party", "birthday", "celebration", "after work", "afterwork",
+  "weekend", "holiday", "vacation", "trip", "travel",
+  "cinema", "movie", "film", "concert", "event", "gig",
+  "who's up", "who is up", "anyone up", "anyone fancy",
+  "whos coming", "who's coming",
+];
+
+function isSocialConversation(allText: string): boolean {
+  return SOCIAL_PHRASES.filter((p) => allText.includes(p)).length >= 2;
+}
+
 // ---------------------------------------------------------------------------
 // Analysis engine
 // ---------------------------------------------------------------------------
@@ -195,6 +212,24 @@ function analyzeConversation(
   messages: AnalysisMessage[]
 ): AnalysisResult {
   const allText = messages.map((m) => m.content).join(" ").toLowerCase();
+
+  // Social/casual conversations must never generate work meeting proposals.
+  if (isSocialConversation(allText)) {
+    const speakingAuthors = [...new Set(messages.map((m) => m.author).filter(Boolean))];
+    return {
+      needs_meeting: false,
+      score: 0,
+      urgency: "low",
+      title,
+      summary: "This appears to be a social or casual conversation. No work meeting needed.",
+      agenda_items: [],
+      participants: speakingAuthors.length > 0 ? speakingAuthors : declaredParticipants,
+      suggested_duration_mins: 0,
+      triggered_signals: [],
+      async_ok_signals: [],
+      confidence: "high",
+    };
+  }
 
   const triggeredSignals: SignalHit[] = MEETING_SIGNAL_CATEGORIES
     .map((cat) => scanCategory(allText, cat))

@@ -127,6 +127,25 @@ const ASYNC_OK_SIGNALS: SignalCategory = {
   ],
 };
 
+// Social/casual topics that should never trigger a work meeting recommendation.
+// Words like "urgent" and "need to decide" legitimately appear in these conversations
+// but are about personal/social logistics, not work deliverables.
+const SOCIAL_PHRASES = [
+  'pub', 'drinks', 'beer', 'wine', 'cocktail', 'happy hour',
+  'lunch', 'dinner', 'breakfast', 'brunch', 'coffee', 'cafe',
+  'restaurant', 'curry', 'pizza', 'takeaway', 'takeout',
+  'party', 'birthday', 'celebration', 'after work', 'afterwork',
+  'weekend', 'holiday', 'vacation', 'trip', 'travel',
+  'cinema', 'movie', 'film', 'concert', 'event', 'gig',
+  "who's up", "who is up", "anyone up", "anyone fancy",
+  "whos coming", "who's coming",
+];
+
+function isSocialConversation(allText: string): boolean {
+  const matches = SOCIAL_PHRASES.filter((p) => allText.includes(p));
+  return matches.length >= 2;
+}
+
 const MEETING_SIGNAL_CATEGORIES = [
   BLOCKER_SIGNALS,
   CONFLICT_SIGNALS,
@@ -185,6 +204,25 @@ export function analyzeConversation(
   messages: AnalysisMessage[]
 ): AnalysisResult {
   const allText = messages.map((m) => m.content).join(' ').toLowerCase();
+
+  // Social/casual conversations should never generate work meeting proposals,
+  // even if they contain words like "urgent" or "need to decide".
+  if (isSocialConversation(allText)) {
+    const speakingAuthors = [...new Set(messages.map((m) => m.author).filter(Boolean))];
+    return {
+      needs_meeting: false,
+      score: 0,
+      urgency: 'low',
+      title: title,
+      summary: 'This appears to be a social or casual conversation. No work meeting needed.',
+      agenda_items: [],
+      participants: speakingAuthors.length > 0 ? speakingAuthors : declaredParticipants,
+      suggested_duration_mins: 0,
+      triggered_signals: [],
+      async_ok_signals: [],
+      confidence: 'high',
+    };
+  }
 
   // Scan all meeting signal categories
   const triggeredSignals: SignalHit[] = MEETING_SIGNAL_CATEGORIES
