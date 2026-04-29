@@ -1,13 +1,14 @@
 import { useEffect, useState, useCallback } from 'react';
-import { Plus, Zap, BellRing } from 'lucide-react';
+import { Plus, Zap, BellRing, CalendarDays } from 'lucide-react';
 import type { Conversation, Message, MeetingProposal } from './lib/database.types';
 import { getConversations, getMessages, getMeetingProposals, updateProposalStatus } from './lib/api';
 import ConversationPanel from './components/ConversationPanel';
 import NewConversationModal from './components/NewConversationModal';
 import MeetingProposalCard from './components/MeetingProposalCard';
 import StatsBar from './components/StatsBar';
+import CalendarPage from './components/calendar/CalendarPage';
 
-type Tab = 'conversations' | 'proposals';
+type Tab = 'conversations' | 'proposals' | 'calendar';
 
 export default function App() {
   const [tab, setTab] = useState<Tab>('conversations');
@@ -69,11 +70,17 @@ export default function App() {
     return urgencyOrder[a.urgency] - urgencyOrder[b.urgency];
   });
 
+  const NAV_TABS: { id: Tab; label: string; icon: React.ReactNode }[] = [
+    { id: 'conversations', label: 'Conversations', icon: <Zap size={14} /> },
+    { id: 'proposals', label: 'Meeting Proposals', icon: <BellRing size={14} /> },
+    { id: 'calendar', label: 'Calendar', icon: <CalendarDays size={14} /> },
+  ];
+
   return (
-    <div className="min-h-screen bg-gray-50 font-sans">
+    <div className={`min-h-screen bg-gray-50 font-sans ${tab === 'calendar' ? 'flex flex-col' : ''}`}>
       {/* Header */}
       <header className="bg-white border-b border-gray-200 sticky top-0 z-40">
-        <div className="max-w-5xl mx-auto px-4 sm:px-6 h-14 flex items-center justify-between">
+        <div className="max-w-6xl mx-auto px-4 sm:px-6 h-14 flex items-center justify-between">
           <div className="flex items-center gap-2.5">
             <div className="w-7 h-7 bg-gray-900 rounded-lg flex items-center justify-center">
               <Zap size={14} className="text-white" />
@@ -83,21 +90,25 @@ export default function App() {
               <span className="ml-2 text-xs text-gray-400 hidden sm:inline">async-first communication analyzer</span>
             </div>
           </div>
-          <button
-            onClick={() => setShowModal(true)}
-            className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-gray-900 text-white text-xs rounded-lg hover:bg-gray-700 transition-colors"
-          >
-            <Plus size={13} /> New conversation
-          </button>
+          {tab !== 'calendar' && (
+            <button
+              onClick={() => setShowModal(true)}
+              className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-gray-900 text-white text-xs rounded-lg hover:bg-gray-700 transition-colors"
+            >
+              <Plus size={13} /> New conversation
+            </button>
+          )}
         </div>
       </header>
 
-      <main className="max-w-5xl mx-auto px-4 sm:px-6 py-6 space-y-6">
-        {/* Stats */}
-        {!loading && <StatsBar conversations={conversations} proposals={proposals} />}
+      <div className={`max-w-6xl mx-auto px-4 sm:px-6 ${tab === 'calendar' ? 'flex-1 flex flex-col min-h-0 pb-4' : 'py-6 space-y-6'}`}>
+        {/* Stats — only on non-calendar tabs */}
+        {!loading && tab !== 'calendar' && (
+          <StatsBar conversations={conversations} proposals={proposals} />
+        )}
 
         {/* High urgency alert */}
-        {highUrgencyPending > 0 && (
+        {highUrgencyPending > 0 && tab !== 'calendar' && (
           <div className="flex items-start gap-3 bg-red-50 border border-red-200 rounded-xl px-4 py-3">
             <BellRing size={16} className="text-red-500 shrink-0 mt-0.5" />
             <div>
@@ -118,18 +129,19 @@ export default function App() {
         )}
 
         {/* Tabs */}
-        <div className="flex border-b border-gray-200">
-          {(['conversations', 'proposals'] as Tab[]).map((t) => (
+        <div className={`flex border-b border-gray-200 ${tab === 'calendar' ? 'shrink-0' : ''}`}>
+          {NAV_TABS.map((t) => (
             <button
-              key={t}
-              onClick={() => setTab(t)}
-              className={`relative px-4 py-2 text-sm font-medium transition-colors ${
-                tab === t ? 'text-gray-900 border-b-2 border-gray-900 -mb-px' : 'text-gray-500 hover:text-gray-700'
+              key={t.id}
+              onClick={() => setTab(t.id)}
+              className={`relative inline-flex items-center gap-1.5 px-4 py-2.5 text-sm font-medium transition-colors ${
+                tab === t.id ? 'text-gray-900 border-b-2 border-gray-900 -mb-px' : 'text-gray-500 hover:text-gray-700'
               }`}
             >
-              {t === 'conversations' ? 'Conversations' : 'Meeting Proposals'}
-              {t === 'proposals' && pendingCount > 0 && (
-                <span className="ml-2 text-xs bg-amber-100 text-amber-700 rounded-full px-1.5 py-0.5 font-medium">
+              {t.icon}
+              {t.label}
+              {t.id === 'proposals' && pendingCount > 0 && (
+                <span className="ml-1 text-xs bg-amber-100 text-amber-700 rounded-full px-1.5 py-0.5 font-medium">
                   {pendingCount}
                 </span>
               )}
@@ -138,9 +150,13 @@ export default function App() {
         </div>
 
         {/* Content */}
-        {loading ? (
+        {loading && tab !== 'calendar' ? (
           <div className="flex items-center justify-center py-20">
             <div className="w-6 h-6 border-2 border-gray-300 border-t-gray-700 rounded-full animate-spin" />
+          </div>
+        ) : tab === 'calendar' ? (
+          <div className="flex-1 min-h-0 pt-4" style={{ height: 'calc(100vh - 160px)' }}>
+            <CalendarPage />
           </div>
         ) : tab === 'conversations' ? (
           <ConversationPanel
@@ -187,7 +203,7 @@ export default function App() {
             )}
           </div>
         )}
-      </main>
+      </div>
 
       {showModal && (
         <NewConversationModal
